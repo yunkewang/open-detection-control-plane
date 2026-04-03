@@ -1,0 +1,579 @@
+{
+  "$defs": {
+    "Dependency": {
+      "description": "A dependency required by one or more detections.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DependencyKind"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DependencyStatus",
+          "default": "unknown"
+        },
+        "source_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source File"
+        },
+        "definition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Definition"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "Dependency",
+      "type": "object"
+    },
+    "DependencyKind": {
+      "description": "The kind of dependency a detection relies on.",
+      "enum": [
+        "macro",
+        "eventtype",
+        "lookup",
+        "data_model",
+        "field",
+        "tag",
+        "saved_search",
+        "transform",
+        "unknown"
+      ],
+      "title": "DependencyKind",
+      "type": "string"
+    },
+    "DependencyStats": {
+      "description": "Aggregate statistics about dependencies in a scan.",
+      "properties": {
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "by_kind": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Kind",
+          "type": "object"
+        },
+        "by_status": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Status",
+          "type": "object"
+        }
+      },
+      "title": "DependencyStats",
+      "type": "object"
+    },
+    "DependencyStatus": {
+      "description": "Resolution status of a dependency.",
+      "enum": [
+        "resolved",
+        "missing",
+        "degraded",
+        "unknown"
+      ],
+      "title": "DependencyStatus",
+      "type": "string"
+    },
+    "Detection": {
+      "description": "A security detection rule or search.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "search_query": {
+          "default": "",
+          "title": "Search Query",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/DetectionSeverity",
+          "default": "medium"
+        },
+        "source_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source File"
+        },
+        "source_app": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source App"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "references": {
+          "description": "List of dependency IDs this detection references.",
+          "items": {
+            "type": "string"
+          },
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Detection",
+      "type": "object"
+    },
+    "DetectionSeverity": {
+      "description": "Severity levels for detections.",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "informational"
+      ],
+      "title": "DetectionSeverity",
+      "type": "string"
+    },
+    "Environment": {
+      "description": "A deployment environment containing one or more platforms.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "platforms": {
+          "items": {
+            "$ref": "#/$defs/Platform"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Environment",
+      "type": "object"
+    },
+    "Finding": {
+      "description": "A finding produced by analyzing a detection against its environment.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "detection_id": {
+          "title": "Detection Id",
+          "type": "string"
+        },
+        "dependency_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dependency Id"
+        },
+        "category": {
+          "$ref": "#/$defs/FindingCategory"
+        },
+        "severity": {
+          "$ref": "#/$defs/FindingSeverity"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "remediation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RemediationAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "detection_id",
+        "category",
+        "severity",
+        "title",
+        "description"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "FindingCategory": {
+      "description": "Categories of findings.",
+      "enum": [
+        "missing_dependency",
+        "unresolved_reference",
+        "configuration_issue",
+        "data_gap",
+        "optimization_opportunity"
+      ],
+      "title": "FindingCategory",
+      "type": "string"
+    },
+    "FindingSeverity": {
+      "description": "Severity levels for findings.",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ],
+      "title": "FindingSeverity",
+      "type": "string"
+    },
+    "Platform": {
+      "description": "A security platform or technology stack within an environment.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "vendor": {
+          "title": "Vendor",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "adapter_type": {
+          "title": "Adapter Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "vendor",
+        "adapter_type"
+      ],
+      "title": "Platform",
+      "type": "object"
+    },
+    "ReadinessScore": {
+      "description": "Readiness score for a single detection.",
+      "properties": {
+        "detection_id": {
+          "title": "Detection Id",
+          "type": "string"
+        },
+        "detection_name": {
+          "title": "Detection Name",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ReadinessStatus"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "total_dependencies": {
+          "default": 0,
+          "title": "Total Dependencies",
+          "type": "integer"
+        },
+        "resolved_dependencies": {
+          "default": 0,
+          "title": "Resolved Dependencies",
+          "type": "integer"
+        },
+        "missing_dependencies": {
+          "default": 0,
+          "title": "Missing Dependencies",
+          "type": "integer"
+        },
+        "findings": {
+          "description": "Finding IDs associated with this detection.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        }
+      },
+      "required": [
+        "detection_id",
+        "detection_name",
+        "status",
+        "score"
+      ],
+      "title": "ReadinessScore",
+      "type": "object"
+    },
+    "ReadinessStatus": {
+      "description": "Overall readiness status of a detection.",
+      "enum": [
+        "runnable",
+        "partially_runnable",
+        "blocked",
+        "unknown"
+      ],
+      "title": "ReadinessStatus",
+      "type": "string"
+    },
+    "ReadinessSummary": {
+      "description": "High-level summary of detection readiness across a scan.",
+      "properties": {
+        "total_detections": {
+          "default": 0,
+          "title": "Total Detections",
+          "type": "integer"
+        },
+        "runnable": {
+          "default": 0,
+          "title": "Runnable",
+          "type": "integer"
+        },
+        "partially_runnable": {
+          "default": 0,
+          "title": "Partially Runnable",
+          "type": "integer"
+        },
+        "blocked": {
+          "default": 0,
+          "title": "Blocked",
+          "type": "integer"
+        },
+        "unknown": {
+          "default": 0,
+          "title": "Unknown",
+          "type": "integer"
+        },
+        "overall_score": {
+          "default": 0.0,
+          "title": "Overall Score",
+          "type": "number"
+        }
+      },
+      "title": "ReadinessSummary",
+      "type": "object"
+    },
+    "RemediationAction": {
+      "description": "A recommended action to remediate a finding.",
+      "properties": {
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Effort",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "effort"
+      ],
+      "title": "RemediationAction",
+      "type": "object"
+    }
+  },
+  "description": "Complete report produced by a scan of an environment.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "#/$defs/Environment"
+    },
+    "scan_timestamp": {
+      "format": "date-time",
+      "title": "Scan Timestamp",
+      "type": "string"
+    },
+    "detections": {
+      "items": {
+        "$ref": "#/$defs/Detection"
+      },
+      "title": "Detections",
+      "type": "array"
+    },
+    "dependencies": {
+      "items": {
+        "$ref": "#/$defs/Dependency"
+      },
+      "title": "Dependencies",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "readiness_scores": {
+      "items": {
+        "$ref": "#/$defs/ReadinessScore"
+      },
+      "title": "Readiness Scores",
+      "type": "array"
+    },
+    "readiness_summary": {
+      "$ref": "#/$defs/ReadinessSummary"
+    },
+    "dependency_stats": {
+      "$ref": "#/$defs/DependencyStats"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    }
+  },
+  "required": [
+    "environment"
+  ],
+  "title": "ScanReport",
+  "type": "object"
+}
