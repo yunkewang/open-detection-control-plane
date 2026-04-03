@@ -19,36 +19,15 @@ ODCP provides a **unified control plane** that models environments, detections, 
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│                     CLI / API                         │
-├──────────────────────────────────────────────────────┤
-│                  Reporting Engine                      │
-│            (JSON · Markdown · HTML)                    │
-├──────────────────────────────────────────────────────┤
-│       Analyzers                                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │  Readiness   │  │  Dependency  │  │  (Future)  │  │
-│  └─────────────┘  └──────────────┘  └────────────┘  │
-├──────────────────────────────────────────────────────┤
-│              Core Engine + Graph                      │
-│        (Dependency Graph · Scoring · Findings)        │
-├──────────────────────────────────────────────────────┤
-│       Adapters                                        │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │   Splunk    │  │  (Sigma)     │  │ (Sentinel) │  │
-│  └─────────────┘  └──────────────┘  └────────────┘  │
-├──────────────────────────────────────────────────────┤
-│       Collectors                                      │
-│  ┌─────────────┐  ┌──────────────┐                   │
-│  │   Local     │  │  (Remote)    │                   │
-│  └─────────────┘  └──────────────┘                   │
-├──────────────────────────────────────────────────────┤
-│              Unified Data Models                      │
-│  Environment · Detection · Dependency · Finding       │
-│  KnowledgeObject · ReadinessScore · ScanReport        │
-└──────────────────────────────────────────────────────┘
-```
+| Layer | Components |
+|-------|------------|
+| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph` |
+| **Reporting** | JSON, Markdown, HTML |
+| **Analyzers** | Readiness, Dependency, *(Future: Semantic Gap, Optimization)* |
+| **Core Engine** | Dependency Graph, Scoring, Findings |
+| **Adapters** | **Splunk**, *(Future: Sigma, Sentinel, Elastic, Chronicle)* |
+| **Collectors** | Local, *(Future: Remote, API)* |
+| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, ScanReport |
 
 ## Current MVP (v0.1.0)
 
