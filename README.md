@@ -24,29 +24,29 @@ ODCP provides a **unified control plane** that models environments, detections, 
 │                       CLI / API                        │
 ├────────────────────────────────────────────────────────┤
 │                   Reporting Engine                     │
-│              (JSON · Markdown · HTML)                 │
+│              (JSON · Markdown · HTML)                  │
 ├────────────────────────────────────────────────────────┤
 │                       Analyzers                        │
-│   ┌─────────────┐  ┌──────────────┐  ┌────────────┐   │
-│   │  Readiness  │  │  Dependency  │  │  (Future)  │   │
-│   └─────────────┘  └──────────────┘  └────────────┘   │
+│   ┌─────────────┐  ┌──────────────┐  ┌────────────┐    │
+│   │  Readiness  │  │  Dependency  │  │  (Future)  │    │
+│   └─────────────┘  └──────────────┘  └────────────┘    │
 ├────────────────────────────────────────────────────────┤
-│                 Core Engine + Graph                   │
-│          (Dependency Graph · Scoring · Findings)      │
+│                 Core Engine + Graph                    │
+│          (Dependency Graph · Scoring · Findings)       │
 ├────────────────────────────────────────────────────────┤
 │                        Adapters                        │
-│   ┌─────────────┐  ┌──────────────┐  ┌────────────┐   │
-│   │   Splunk    │  │   (Sigma)    │  │ (Sentinel) │   │
-│   └─────────────┘  └──────────────┘  └────────────┘   │
+│   ┌─────────────┐  ┌──────────────┐  ┌────────────┐    │
+│   │   Splunk    │  │   (Sigma)    │  │ (Sentinel) │    │
+│   └─────────────┘  └──────────────┘  └────────────┘    │
 ├────────────────────────────────────────────────────────┤
 │                       Collectors                       │
-│   ┌─────────────┐  ┌──────────────┐                   │
-│   │    Local    │  │   (Remote)   │                   │
-│   └─────────────┘  └──────────────┘                   │
+│   ┌─────────────┐  ┌──────────────┐                    │
+│   │    Local    │  │   (Remote)   │                    │
+│   └─────────────┘  └──────────────┘                    │
 ├────────────────────────────────────────────────────────┤
-│                 Unified Data Models                   │
-│    Environment · Detection · Dependency · Finding     │
-│    KnowledgeObject · ReadinessScore · ScanReport      │
+│                 Unified Data Models                    │
+│    Environment · Detection · Dependency · Finding      │
+│    KnowledgeObject · ReadinessScore · ScanReport       │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -116,9 +116,9 @@ odcp graph report.json
 ### Example output
 
 ```
-╭──────────────── Scan: ACME Security Detections ─────────────────╮
+╭──────────────── Scan: ACME Security Detections ──────────────────╮
 │ Total detections: 5                                              │
-│ Runnable: 3  Partial: 0  Blocked: 2  Unknown: 0                 │
+│ Runnable: 3  Partial: 0  Blocked: 2  Unknown: 0                  │
 │ Overall readiness: 67%                                           │
 ╰──────────────────────────────────────────────────────────────────╯
                  Top Blocked Detections
@@ -151,12 +151,12 @@ odcp/
 
 ## Roadmap
 
-| Phase | Focus                                              | Status           |
-| :---- | :------------------------------------------------- | :--------------- |
-| 1     | Splunk static readiness analysis                    | **MVP Complete** |
-| 2     | Splunk runtime signals and health                   | Planned          |
-| 3     | Semantic gap analysis and optimization              | Planned          |
-| 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | Planned       |
+| Phase | Focus                                                 | Status           |
+| ----- | ----------------------------------------------------- | ---------------- |
+| 1     | Splunk static readiness analysis                      | **MVP Complete** |
+| 2     | Splunk runtime signals and health                     | Planned          |
+| 3     | Semantic gap analysis and optimization                | Planned          |
+| 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | Planned          |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.
 
