@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from pathlib import Path
+from typing import Optional
 
 from odcp.adapters import BaseAdapter
 from odcp.analyzers.dependency import DependencyAnalyzer
 from odcp.analyzers.readiness import ReadinessAnalyzer
+from odcp.analyzers.runtime import RuntimeHealthAnalyzer
+from odcp.collectors.api import APICollector, RuntimeData
 from odcp.core.graph import DependencyGraph
 from odcp.models import (
     DependencyStats,
@@ -82,6 +85,91 @@ class ScanEngine:
             readiness_scores=scores,
             readiness_summary=readiness_summary,
             dependency_stats=dep_stats,
+        )
+
+    def scan_with_runtime(
+        self,
+        path: Path,
+        api_collector: APICollector,
+        index_names: Optional[list[str]] = None,
+        static_weight: float = 0.5,
+        runtime_weight: float = 0.5,
+    ) -> ScanReport:
+        """Run a combined static + runtime scan.
+
+        This extends the standard scan by collecting live signals from the
+        Splunk REST API and merging them with static readiness scores.
+        """
+        logger.info("Starting combined static + runtime scan: %s", path)
+
+        # --- Static analysis (same as scan) ---
+        environment = self.adapter.parse_environment(path)
+        detections = self.adapter.parse_detections(path)
+        knowledge_objects = self.adapter.parse_knowledge_objects(path)
+        dependencies = self.adapter.resolve_dependencies(detections, knowledge_objects)
+
+        graph = DependencyGraph()
+        graph.build_from_scan(detections, dependencies)
+
+        readiness_analyzer = ReadinessAnalyzer()
+        static_scores, readiness_findings = readiness_analyzer.analyze(
+            detections, dependencies, graph
+        )
+
+        dep_analyzer = DependencyAnalyzer()
+        dep_findings = dep_analyzer.analyze(dependencies, graph)
+
+        # --- Runtime analysis ---
+        logger.info("Collecting runtime signals from Splunk API...")
+        runtime_data: RuntimeData = api_collector.collect(detections, dependencies)
+
+        # Optionally check specific indexes
+        if index_names:
+            api_collector.collect_index_health(index_names, runtime_data)
+
+        runtime_analyzer = RuntimeHealthAnalyzer()
+        runtime_scores, runtime_findings = runtime_analyzer.analyze(
+            detections, dependencies, runtime_data, graph
+        )
+
+        # Compute combined scores
+        combined_scores = runtime_analyzer.compute_combined_scores(
+            static_scores, runtime_scores,
+            static_weight=static_weight,
+            runtime_weight=runtime_weight,
+        )
+
+        runtime_summary = runtime_analyzer.compute_runtime_summary(runtime_scores)
+
+        # --- Merge results ---
+        all_findings = readiness_findings + dep_findings + runtime_findings
+        dep_stats = self._compute_dep_stats(dependencies)
+        readiness_summary = self._compute_readiness_summary(static_scores)
+
+        logger.info(
+            "Combined scan complete: %d detections, %d runtime signals, %d total findings",
+            len(detections),
+            sum(len(s.signals) for s in runtime_scores),
+            len(all_findings),
+        )
+
+        return ScanReport(
+            environment=environment,
+            detections=detections,
+            dependencies=dependencies,
+            findings=all_findings,
+            readiness_scores=static_scores,
+            readiness_summary=readiness_summary,
+            dependency_stats=dep_stats,
+            metadata={
+                "runtime_enabled": True,
+                "runtime_summary": runtime_summary.model_dump(),
+                "combined_scores": [c.model_dump() for c in combined_scores],
+                "runtime_errors": runtime_data.errors,
+                "server_info": runtime_data.server_info,
+                "static_weight": static_weight,
+                "runtime_weight": runtime_weight,
+            },
         )
 
     @staticmethod
