@@ -77,7 +77,7 @@ class ScanEngine:
             readiness_summary.blocked,
         )
 
-        return ScanReport(
+        report = ScanReport(
             environment=environment,
             detections=detections,
             dependencies=dependencies,
@@ -85,6 +85,78 @@ class ScanEngine:
             readiness_scores=scores,
             readiness_summary=readiness_summary,
             dependency_stats=dep_stats,
+        )
+
+        return report
+
+    def enrich_with_coverage(
+        self,
+        report: ScanReport,
+        graph: DependencyGraph,
+        known_indexes: Optional[list[str]] = None,
+        known_sourcetypes: Optional[list[str]] = None,
+    ) -> ScanReport:
+        """Enrich an existing report with coverage and optimization analysis.
+
+        Adds MITRE ATT&CK coverage, data source inventory, prioritized
+        remediation, and what-if analysis to the report metadata.
+        """
+        from odcp.analyzers.coverage import CoverageAnalyzer, OptimizationAnalyzer
+
+        logger.info("Running coverage and optimization analysis...")
+
+        # Coverage analysis
+        coverage_analyzer = CoverageAnalyzer()
+        coverage, mappings, ds_inventory, coverage_findings = (
+            coverage_analyzer.analyze(
+                report.detections,
+                report.readiness_scores,
+                known_indexes=known_indexes,
+                known_sourcetypes=known_sourcetypes,
+            )
+        )
+
+        # Optimization analysis
+        opt_analyzer = OptimizationAnalyzer()
+        opt_summary, opt_findings = opt_analyzer.analyze(
+            report.detections,
+            report.dependencies,
+            report.readiness_scores,
+            graph,
+        )
+
+        logger.info(
+            "Coverage: %d/%d techniques covered, %d data source gaps",
+            coverage.covered,
+            coverage.total_techniques_in_scope,
+            ds_inventory.total_gaps,
+        )
+        logger.info(
+            "Optimization: %d blocked, max achievable score %.0f%%",
+            opt_summary.total_blocked_detections,
+            opt_summary.max_achievable_score * 100,
+        )
+
+        # Merge findings
+        all_findings = (
+            list(report.findings)
+            + coverage_findings
+            + opt_findings
+        )
+
+        # Update metadata
+        meta = dict(report.metadata)
+        meta["coverage_enabled"] = True
+        meta["coverage_summary"] = coverage.model_dump()
+        meta["mitre_mappings"] = [m.model_dump() for m in mappings]
+        meta["data_source_inventory"] = ds_inventory.model_dump()
+        meta["optimization_summary"] = opt_summary.model_dump()
+
+        return report.model_copy(
+            update={
+                "findings": all_findings,
+                "metadata": meta,
+            }
         )
 
     def scan_with_runtime(
