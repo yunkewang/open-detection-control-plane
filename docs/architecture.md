@@ -91,24 +91,23 @@ Typer-based CLI with Rich output:
 ## Data Flow
 
 ```
-Filesystem/API → Collector → Adapter → Unified Models
-                                            │
-                                     ┌──────┴──────┐
-                                     │  Dependency  │
-                                     │    Graph     │
-                                     └──────┬──────┘
-                                            │
-                                     ┌──────┴──────┐
-                                     │  Analyzers   │
-                                     └──────┬──────┘
-                                            │
-                                     ┌──────┴──────┐
-                                     │ ScanReport  │
-                                     └──────┬──────┘
-                                            │
-                                  ┌─────────┼─────────┐
-                                  │         │         │
-                                JSON   Markdown    HTML
+Filesystem/API
+      |
+  Collector
+      |
+   Adapter
+      |
+ Unified Models
+      |
+ Dependency Graph
+      |
+  Analyzers
+      |
+  ScanReport
+      |
+  +---+---+
+  |   |   |
+JSON  MD HTML
 ```
 
 ## Adding a New Adapter

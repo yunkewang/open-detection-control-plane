@@ -181,7 +181,6 @@ class SplunkAdapter(BaseAdapter):
                         kind=kind,
                         name=ref_name,
                         status=status,
-                        source_detection=det.id,
                         definition=ko.definition if ko else None,
                     )
                     all_deps.append(dep)
