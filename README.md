@@ -23,16 +23,17 @@ ODCP provides a **unified control plane** that models environments, detections, 
 |-------|------------|
 | **CLI / API** | `odcp scan`, `odcp report`, `odcp graph` |
 | **Reporting** | JSON, Markdown, HTML |
-| **Analyzers** | Readiness, Dependency, *(Future: Semantic Gap, Optimization)* |
+| **Analyzers** | Readiness, Dependency, **Runtime Health**, *(Future: Semantic Gap, Optimization)* |
 | **Core Engine** | Dependency Graph, Scoring, Findings |
-| **Adapters** | **Splunk**, *(Future: Sigma, Sentinel, Elastic, Chronicle)* |
-| **Collectors** | Local, *(Future: Remote, API)* |
-| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, ScanReport |
+| **Adapters** | **Splunk** (static + runtime), *(Future: Sigma, Sentinel, Elastic, Chronicle)* |
+| **Collectors** | Local, **Splunk REST API**, *(Future: Remote)* |
+| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, ScanReport |
 
 ## Current MVP (v0.1.0)
 
 ### What's implemented
 
+**Phase 1 — Static Readiness:**
 - **Core models** — Pydantic v2 models for Environment, Detection, Dependency, Finding, ReadinessScore, ScanReport
 - **Splunk adapter** — Parses `savedsearches.conf`, `macros.conf`, `eventtypes.conf`, `transforms.conf` with default/local merge
 - **SPL dependency extraction** — Extracts macro, eventtype, lookup, data model, and saved search references from SPL queries
@@ -42,12 +43,18 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **Reporting** — JSON, Markdown, and HTML output formats
 - **CLI** — `odcp scan splunk`, `odcp report`, `odcp graph`, `odcp version`
 
+**Phase 2 — Runtime Signals and Health:**
+- **Splunk REST API client** — Token and basic auth, SSL configurable, queries saved searches, lookups, data models, and indexes
+- **API collector** — Gathers runtime signals from a live Splunk instance with graceful error handling
+- **Runtime health models** — `SavedSearchHealth`, `LookupHealth`, `DataModelHealth`, `IndexHealth`, `RuntimeSignal`, `RuntimeHealthScore`, `CombinedReadinessScore`
+- **Runtime health analyzer** — Scores detections based on live signals (scheduling, execution failures, lookup availability, data model acceleration)
+- **Combined scoring** — Merges static readiness + runtime health into a single combined score with configurable weights
+- **Runtime CLI flags** — `--api-url`, `--token`, `--username`, `--password`, `--verify-ssl`, `--indexes`
+
 ### What's placeholder / future
 
-- Runtime health analyzer (API-based Splunk health checks)
 - Semantic gap analyzer (data source coverage analysis)
 - Optimization analyzer (prioritized remediation)
-- Remote/API collectors
 - Additional adapters (Sigma, Sentinel, Elastic, Chronicle)
 
 ## Installation
@@ -78,6 +85,19 @@ odcp scan splunk /path/to/splunk_app --output report.md --format markdown
 
 # HTML report
 odcp scan splunk /path/to/splunk_app --output report.html --format html
+```
+
+### Scan with runtime health (requires live Splunk)
+
+```bash
+# Combined static + runtime scan with token auth
+odcp scan splunk /path/to/splunk_app --api-url https://splunk:8089 --token YOUR_TOKEN
+
+# With username/password and specific index checks
+odcp scan splunk /path/to/splunk_app \
+  --api-url https://splunk:8089 \
+  --username admin --password changeme \
+  --indexes main,security
 ```
 
 ### Convert report formats
@@ -119,11 +139,11 @@ pytest tests/ -v
 
 ```
 odcp/
-├── models/          # Pydantic data models (unified schema)
+├── models/          # Pydantic data models (unified schema + runtime health)
 ├── core/            # Engine, dependency graph
-├── adapters/        # Vendor adapters (Splunk, future: Sigma, etc.)
-├── analyzers/       # Readiness, dependency, future analyzers
-├── collectors/      # Data collection (local, future: remote/API)
+├── adapters/        # Vendor adapters (Splunk static + REST API client)
+├── analyzers/       # Readiness, dependency, runtime health analyzers
+├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
 └── cli/             # Typer CLI interface
 ```
@@ -132,8 +152,8 @@ odcp/
 
 | Phase | Focus                                                 | Status           |
 | ----- | ----------------------------------------------------- | ---------------- |
-| 1     | Splunk static readiness analysis                      | **MVP Complete** |
-| 2     | Splunk runtime signals and health                     | Planned          |
+| 1     | Splunk static readiness analysis                      | **Complete** |
+| 2     | Splunk runtime signals and health                     | **Complete** |
 | 3     | Semantic gap analysis and optimization                | Planned          |
 | 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | Planned          |
 
