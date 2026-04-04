@@ -1,0 +1,16 @@
+id: s1004-disabled
+name: Disabled Example Rule
+description: This rule is disabled for testing
+severity: Low
+status: Test
+tactics:
+  - Discovery
+query: |
+  Heartbeat
+  | summarize count() by Computer
+queryFrequency: PT1H
+queryPeriod: PT1H
+triggerOperator: gt
+triggerThreshold: 100
+enabled: false
+kind: Scheduled

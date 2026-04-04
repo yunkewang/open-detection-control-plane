@@ -1,0 +1,15 @@
+{
+  "name": "Disabled Example Rule",
+  "description": "This rule is disabled",
+  "rule_id": "e1004-disabled",
+  "type": "query",
+  "language": "kuery",
+  "severity": "low",
+  "risk_score": 10,
+  "query": "event.action:\"user-login\"",
+  "index": ["auditbeat-*"],
+  "required_fields": ["event.action"],
+  "tags": ["Elastic"],
+  "author": ["ODCP Example"],
+  "enabled": false
+}

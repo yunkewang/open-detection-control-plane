@@ -1,0 +1,14 @@
+title: Old Deprecated Rule
+id: d4e5f6a7-8901-2345-defa-123456789012
+status: deprecated
+level: low
+description: This rule is deprecated and should not be active
+author: ODCP Example
+date: 2024/01/01
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 7045
+    condition: selection

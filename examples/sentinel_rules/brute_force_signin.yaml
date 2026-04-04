@@ -1,0 +1,24 @@
+id: s1001-brute-force-signin
+name: Brute Force Sign-In Attempts
+description: Detects multiple failed sign-in attempts from a single IP address
+severity: Medium
+status: Available
+tactics:
+  - CredentialAccess
+relevantTechniques:
+  - T1110
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - SigninLogs
+query: |
+  SigninLogs
+  | where ResultType != "0"
+  | summarize FailedAttempts = count() by IPAddress, UserPrincipalName
+  | where FailedAttempts > 10
+queryFrequency: PT5M
+queryPeriod: PT1H
+triggerOperator: gt
+triggerThreshold: 0
+enabled: true
+kind: Scheduled

@@ -1,0 +1,33 @@
+{
+  "name": "Suspicious PowerShell Execution",
+  "description": "Detects encoded or suspicious PowerShell command execution",
+  "rule_id": "e1001-powershell-suspicious",
+  "type": "query",
+  "language": "kuery",
+  "severity": "high",
+  "risk_score": 73,
+  "query": "process.name:\"powershell.exe\" and process.args:(\"-enc\" or \"-EncodedCommand\")",
+  "index": ["winlogbeat-*", "logs-endpoint.events.*"],
+  "required_fields": ["process.name", "process.args", "process.pid"],
+  "tags": ["Elastic", "Windows"],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0002",
+        "name": "Execution"
+      },
+      "technique": [
+        {
+          "id": "T1059",
+          "name": "Command and Scripting Interpreter",
+          "subtechnique": [
+            {"id": "T1059.001", "name": "PowerShell"}
+          ]
+        }
+      ]
+    }
+  ],
+  "author": ["ODCP Example"],
+  "enabled": true
+}
