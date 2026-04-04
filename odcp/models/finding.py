@@ -27,6 +27,10 @@ class FindingCategory(str, Enum):
     configuration_issue = "configuration_issue"
     data_gap = "data_gap"
     optimization_opportunity = "optimization_opportunity"
+    runtime_health = "runtime_health"
+    stale_execution = "stale_execution"
+    data_flow_issue = "data_flow_issue"
+    acceleration_issue = "acceleration_issue"
 
 
 class RemediationAction(BaseModel):

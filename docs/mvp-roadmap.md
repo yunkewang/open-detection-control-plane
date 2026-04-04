@@ -28,19 +28,25 @@
 
 ---
 
-## Phase 2: Splunk Runtime Signals and Health
+## Phase 2: Splunk Runtime Signals and Health — Complete
 
 **Goal:** Extend analysis with live runtime data from Splunk APIs.
 
-### Planned
+### Delivered
 
-- API collector for Splunk REST API
-- Saved search execution status (last run time, errors)
-- KV store and lookup table health checks
-- Data model acceleration status
-- Index/sourcetype data flow health (are expected data sources active?)
-- Runtime health analyzer that scores based on live signals
-- Combined static + runtime readiness scoring
+- Splunk REST API client (`odcp/adapters/splunk/api_client.py`) with token and basic auth
+- API collector (`odcp/collectors/api.py`) for gathering runtime signals
+- Saved search execution status (scheduling, dispatch history, failure detection)
+- KV store and lookup table health checks (existence, type detection)
+- Data model acceleration status (enabled, completion percentage)
+- Index/sourcetype data flow health (event counts, receiving status)
+- Runtime health models (`odcp/models/runtime.py`): signals, scores, summaries
+- RuntimeHealthAnalyzer (`odcp/analyzers/runtime/`) with per-detection scoring
+- Combined static + runtime readiness scoring with configurable weights
+- New finding categories: `runtime_health`, `stale_execution`, `data_flow_issue`, `acceleration_issue`
+- CLI integration: `odcp scan splunk --api-url --token` for combined scans
+- Graceful degradation when API is unavailable or individual checks fail
+- Unit and integration tests for all runtime components (97 tests total)
 
 ---
 
@@ -67,7 +73,7 @@
 
 | Adapter | Input Format | Status |
 |---------|-------------|--------|
-| Splunk | .conf files, REST API | **Phase 1 complete** |
+| Splunk | .conf files, REST API | **Phase 1 + 2 complete** |
 | Sigma | YAML rules | Planned |
 | Sentinel (Microsoft) | KQL analytics, ARM templates | Planned |
 | Elastic | JSON detection rules, Kibana exports | Planned |

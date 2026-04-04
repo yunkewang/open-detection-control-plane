@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -43,9 +43,32 @@ def scan_splunk(
     fmt: ReportFormat = typer.Option(
         ReportFormat.json, "--format", "-f", help="Output format."
     ),
+    api_url: Optional[str] = typer.Option(
+        None, "--api-url",
+        help="Splunk REST API URL (e.g. https://localhost:8089) for runtime health."
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token", help="Splunk authentication token for runtime health."
+    ),
+    username: Optional[str] = typer.Option(
+        None, "--username", help="Splunk username (alternative to token)."
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", help="Splunk password (used with --username)."
+    ),
+    verify_ssl: bool = typer.Option(
+        False, "--verify-ssl", help="Verify SSL certificates for Splunk API."
+    ),
+    indexes: Optional[str] = typer.Option(
+        None, "--indexes", help="Comma-separated index names to check health for."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ) -> None:
-    """Scan a Splunk app/TA bundle for detection readiness."""
+    """Scan a Splunk app/TA bundle for detection readiness.
+
+    When --api-url is provided, also collects runtime health signals
+    from the live Splunk instance and produces combined readiness scores.
+    """
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
     else:
@@ -61,14 +84,34 @@ def scan_splunk(
     adapter = SplunkAdapter()
     engine = ScanEngine(adapter)
 
-    with console.status("[bold blue]Scanning..."):
-        report = engine.scan(path)
+    runtime_enabled = api_url is not None
+    if runtime_enabled:
+        from odcp.adapters.splunk.api_client import SplunkAPIClient
+        from odcp.collectors.api import APICollector
+
+        client = SplunkAPIClient(
+            base_url=api_url,
+            token=token,
+            username=username,
+            password=password,
+            verify_ssl=verify_ssl,
+        )
+        collector = APICollector(client)
+        index_list = [i.strip() for i in indexes.split(",")] if indexes else None
+
+        with console.status("[bold blue]Scanning (static + runtime)..."):
+            report = engine.scan_with_runtime(path, collector, index_names=index_list)
+    else:
+        with console.status("[bold blue]Scanning..."):
+            report = engine.scan(path)
 
     if output:
         _write_report(report, output, fmt)
         console.print(f"[green]Report written to:[/green] {output}")
     else:
         _print_summary(report)
+        if runtime_enabled:
+            _print_runtime_summary(report)
         console.print(
             "\n[dim]Use --output report.json to save full report, "
             "or --format markdown/html for other formats.[/dim]"
@@ -214,6 +257,68 @@ def _print_summary(report) -> None:
             style = {"resolved": "green", "missing": "red"}.get(status, "")
             dep_table.add_row(f"[{style}]{status}[/{style}]" if style else status, str(count))
         console.print(dep_table)
+
+
+def _print_runtime_summary(report) -> None:
+    """Print runtime health summary when runtime data is available."""
+    meta = report.metadata
+    if not meta.get("runtime_enabled"):
+        return
+
+    rs = meta.get("runtime_summary", {})
+    if not rs:
+        return
+
+    summary_lines = (
+        f"[bold]Runtime detections checked:[/bold] {rs.get('total_detections', 0)}\n"
+        f"[green]Healthy:[/green] {rs.get('healthy', 0)}  "
+        f"[yellow]Degraded:[/yellow] {rs.get('degraded', 0)}  "
+        f"[red]Unhealthy:[/red] {rs.get('unhealthy', 0)}  "
+        f"[dim]Unknown:[/dim] {rs.get('unknown', 0)}\n"
+        f"[bold]Runtime health score:[/bold] {rs.get('overall_runtime_score', 0):.0%}\n"
+        f"[dim]Saved searches: {rs.get('saved_searches_checked', 0)} | "
+        f"Lookups: {rs.get('lookups_checked', 0)} | "
+        f"Data models: {rs.get('data_models_checked', 0)} | "
+        f"Indexes: {rs.get('indexes_checked', 0)}[/dim]"
+    )
+    console.print(Panel(summary_lines, title="Runtime Health", border_style="magenta"))
+
+    # Show combined scores for degraded/blocked detections
+    combined = meta.get("combined_scores", [])
+    problem_scores = [
+        c for c in combined if c.get("combined_status") in ("blocked", "degraded")
+    ]
+    if problem_scores:
+        table = Table(title="Detections with Runtime Issues")
+        table.add_column("Detection", style="bold")
+        table.add_column("Static", justify="right")
+        table.add_column("Runtime", justify="right")
+        table.add_column("Combined", justify="right")
+        table.add_column("Status")
+
+        for c in sorted(problem_scores, key=lambda x: x.get("combined_score", 0))[:15]:
+            status_style = {"blocked": "red", "degraded": "yellow"}.get(
+                c.get("combined_status", ""), ""
+            )
+            table.add_row(
+                c.get("detection_name", ""),
+                f"{c.get('static_score', 0):.0%}",
+                f"{c.get('runtime_score', 0):.0%}",
+                f"{c.get('combined_score', 0):.0%}",
+                f"[{status_style}]{c.get('combined_status', '')}[/{status_style}]"
+                if status_style
+                else c.get("combined_status", ""),
+            )
+        console.print(table)
+
+    # Show runtime errors if any
+    errors = meta.get("runtime_errors", [])
+    if errors:
+        console.print(f"\n[yellow]Runtime collection warnings ({len(errors)}):[/yellow]")
+        for err in errors[:5]:
+            console.print(f"  [dim]{err}[/dim]")
+        if len(errors) > 5:
+            console.print(f"  [dim]... and {len(errors) - 5} more[/dim]")
 
 
 if __name__ == "__main__":
