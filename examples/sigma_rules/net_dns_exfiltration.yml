@@ -1,0 +1,19 @@
+title: DNS Exfiltration via Long Queries
+id: b2c3d4e5-6789-0123-bcde-f01234567890
+status: test
+level: medium
+description: Detects unusually long DNS queries that may indicate data exfiltration
+author: ODCP Example
+date: 2025/01/15
+tags:
+    - attack.exfiltration
+    - attack.t1048
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    selection:
+        QueryName|re: '.{50,}'
+    condition: selection
+falsepositives:
+    - CDN hostnames

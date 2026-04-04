@@ -1,0 +1,25 @@
+id: s1002-suspicious-powershell
+name: Suspicious PowerShell Command Execution
+description: Detects potentially malicious PowerShell command-line arguments
+severity: High
+status: Available
+tactics:
+  - Execution
+relevantTechniques:
+  - T1059.001
+requiredDataConnectors:
+  - connectorId: SecurityEvents
+    dataTypes:
+      - SecurityEvent
+query: |
+  SecurityEvent
+  | where EventID == 4688
+  | where CommandLine has_any ("-enc", "-encoded", "FromBase64String", "IEX", "Invoke-Expression")
+  | project TimeGenerated, Computer, Account, CommandLine
+queryFrequency: PT5M
+queryPeriod: PT1H
+triggerOperator: gt
+triggerThreshold: 0
+enabled: true
+kind: Scheduled
+author: ODCP Example

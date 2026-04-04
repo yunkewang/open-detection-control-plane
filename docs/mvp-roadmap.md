@@ -73,22 +73,31 @@
 
 ---
 
-## Phase 4: Additional Vendor Adapters
+## Phase 4: Additional Vendor Adapters — Complete
 
 **Goal:** Extend ODCP beyond Splunk to other platforms.
 
-### Planned Adapters
+### Delivered
+
+- **Sigma adapter** (`odcp/adapters/sigma/`) — Parses YAML detection rules, extracts logsource dependencies (category/product/service), builds pseudo-queries from detection blocks, extracts MITRE ATT&CK tags
+- **Elastic adapter** (`odcp/adapters/elastic/`) — Parses JSON detection rules (flat and nested Kibana export formats), extracts index patterns and required fields as dependencies, maps MITRE technique IDs from threat blocks
+- **Sentinel adapter** (`odcp/adapters/sentinel/`) — Parses YAML/JSON analytics rules, extracts KQL table references via regex, extracts data connectors from requiredDataConnectors, supports relevantTechniques for MITRE mapping
+- CLI commands: `odcp scan sigma`, `odcp scan elastic`, `odcp scan sentinel`
+- Example rule sets for all three platforms (`examples/sigma_rules/`, `examples/elastic_rules/`, `examples/sentinel_rules/`)
+- Unit and integration tests for all adapters (209 tests total)
+
+### Adapter Status
 
 | Adapter | Input Format | Status |
 |---------|-------------|--------|
 | Splunk | .conf files, REST API | **Phase 1 + 2 + 3 complete** |
-| Sigma | YAML rules | Planned |
-| Sentinel (Microsoft) | KQL analytics, ARM templates | Planned |
-| Elastic | JSON detection rules, Kibana exports | Planned |
+| Sigma | YAML rules | **Complete** |
+| Sentinel (Microsoft) | KQL analytics, YAML/JSON | **Complete** |
+| Elastic | JSON detection rules | **Complete** |
 | Chronicle (Google) | YARA-L rules | Planned |
 | OCSF | Open Cybersecurity Schema Framework mapping | Planned |
 
-### Cross-Platform Features
+### Cross-Platform Features (Future)
 
 - Unified readiness view across multiple platforms
 - Detection migration analysis (can this Splunk detection run in Sentinel?)

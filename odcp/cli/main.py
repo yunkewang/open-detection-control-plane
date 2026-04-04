@@ -447,5 +447,134 @@ def _print_coverage_summary(report) -> None:
             console.print(tbl)
 
 
+# ---------------------------------------------------------------------------
+# odcp scan sigma <path>
+# ---------------------------------------------------------------------------
+@scan_app.command("sigma")
+def scan_sigma(
+    path: Path = typer.Argument(..., help="Path to Sigma rule directory or file."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write report to file."),
+    fmt: ReportFormat = typer.Option(
+        ReportFormat.json, "--format", "-f", help="Output format."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Scan Sigma YAML rules for detection readiness."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {path}")
+        raise typer.Exit(code=1)
+
+    from odcp.adapters.sigma import SigmaAdapter
+    from odcp.core.engine import ScanEngine
+
+    adapter = SigmaAdapter()
+    engine = ScanEngine(adapter)
+
+    with console.status("[bold blue]Scanning Sigma rules..."):
+        report = engine.scan(path)
+
+    if output:
+        _write_report(report, output, fmt)
+        console.print(f"[green]Report written to:[/green] {output}")
+    else:
+        _print_summary(report)
+        console.print(
+            "\n[dim]Use --output report.json to save full report.[/dim]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# odcp scan elastic <path>
+# ---------------------------------------------------------------------------
+@scan_app.command("elastic")
+def scan_elastic(
+    path: Path = typer.Argument(..., help="Path to Elastic rule directory or file."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write report to file."),
+    fmt: ReportFormat = typer.Option(
+        ReportFormat.json, "--format", "-f", help="Output format."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Scan Elastic Security detection rules for readiness."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {path}")
+        raise typer.Exit(code=1)
+
+    from odcp.adapters.elastic import ElasticAdapter
+    from odcp.core.engine import ScanEngine
+
+    adapter = ElasticAdapter()
+    engine = ScanEngine(adapter)
+
+    with console.status("[bold blue]Scanning Elastic rules..."):
+        report = engine.scan(path)
+
+    if output:
+        _write_report(report, output, fmt)
+        console.print(f"[green]Report written to:[/green] {output}")
+    else:
+        _print_summary(report)
+        console.print(
+            "\n[dim]Use --output report.json to save full report.[/dim]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# odcp scan sentinel <path>
+# ---------------------------------------------------------------------------
+@scan_app.command("sentinel")
+def scan_sentinel(
+    path: Path = typer.Argument(..., help="Path to Sentinel analytics rule directory or file."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write report to file."),
+    fmt: ReportFormat = typer.Option(
+        ReportFormat.json, "--format", "-f", help="Output format."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Scan Microsoft Sentinel analytics rules for readiness."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {path}")
+        raise typer.Exit(code=1)
+
+    from odcp.adapters.sentinel import SentinelAdapter
+    from odcp.core.engine import ScanEngine
+
+    adapter = SentinelAdapter()
+    engine = ScanEngine(adapter)
+
+    with console.status("[bold blue]Scanning Sentinel rules..."):
+        report = engine.scan(path)
+
+    if output:
+        _write_report(report, output, fmt)
+        console.print(f"[green]Report written to:[/green] {output}")
+    else:
+        _print_summary(report)
+        console.print(
+            "\n[dim]Use --output report.json to save full report.[/dim]"
+        )
+
+
 if __name__ == "__main__":
     app()

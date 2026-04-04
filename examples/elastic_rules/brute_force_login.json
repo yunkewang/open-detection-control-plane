@@ -1,0 +1,27 @@
+{
+  "name": "Brute Force Login Attempts",
+  "description": "Detects multiple failed login attempts from a single source",
+  "rule_id": "e1002-brute-force",
+  "type": "threshold",
+  "language": "kuery",
+  "severity": "medium",
+  "risk_score": 47,
+  "query": "event.category:\"authentication\" and event.outcome:\"failure\"",
+  "index": ["winlogbeat-*", "logs-system.auth-*"],
+  "required_fields": ["event.category", "event.outcome", "source.ip"],
+  "tags": ["Elastic", "Authentication"],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0006",
+        "name": "Credential Access"
+      },
+      "technique": [
+        {"id": "T1110", "name": "Brute Force"}
+      ]
+    }
+  ],
+  "author": ["ODCP Example"],
+  "enabled": true
+}

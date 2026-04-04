@@ -1,0 +1,32 @@
+id: s1003-lateral-rdp
+name: Anomalous RDP Lateral Movement
+description: Detects unusual RDP connections between internal hosts
+severity: Medium
+status: Available
+tactics:
+  - LateralMovement
+relevantTechniques:
+  - T1021.001
+requiredDataConnectors:
+  - connectorId: SecurityEvents
+    dataTypes:
+      - SecurityEvent
+  - connectorId: WindowsFirewall
+    dataTypes:
+      - WindowsFirewall
+query: |
+  SecurityEvent
+  | where EventID == 4624
+  | where LogonType == 10
+  | join kind=inner (
+      WindowsFirewall
+      | where DestinationPort == 3389
+  ) on SourceAddress
+  | summarize ConnectionCount = count() by SourceAddress, Computer
+  | where ConnectionCount > 5
+queryFrequency: PT15M
+queryPeriod: PT6H
+triggerOperator: gt
+triggerThreshold: 0
+enabled: true
+kind: Scheduled

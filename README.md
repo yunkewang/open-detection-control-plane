@@ -25,7 +25,7 @@ ODCP provides a **unified control plane** that models environments, detections, 
 | **Reporting** | JSON, Markdown, HTML |
 | **Analyzers** | Readiness, Dependency, **Runtime Health**, **Coverage**, **Optimization** |
 | **Core Engine** | Dependency Graph, Scoring, Findings |
-| **Adapters** | **Splunk** (static + runtime), *(Future: Sigma, Sentinel, Elastic, Chronicle)* |
+| **Adapters** | **Splunk** (static + runtime), **Sigma**, **Elastic**, **Sentinel**, *(Future: Chronicle)* |
 | **Collectors** | Local, **Splunk REST API**, *(Future: Remote)* |
 | **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, ScanReport |
 
@@ -59,9 +59,15 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **What-if analysis** — Simulates fixing each dependency and predicts new readiness score
 - **CLI `--coverage` flag** — Adds coverage and optimization panels to scan output
 
+**Phase 4 — Additional Vendor Adapters:**
+- **Sigma adapter** — Parses YAML rules, extracts logsource dependencies (category/product/service), builds pseudo-queries from detection blocks, maps MITRE ATT&CK tags
+- **Elastic adapter** — Parses JSON detection rules (flat and nested Kibana export formats), extracts index patterns and required fields as dependencies, maps MITRE techniques from threat blocks
+- **Sentinel adapter** — Parses YAML/JSON analytics rules, extracts KQL table references, data connector dependencies, and MITRE technique mappings
+- **CLI commands** — `odcp scan sigma`, `odcp scan elastic`, `odcp scan sentinel`
+
 ### What's placeholder / future
 
-- Additional adapters (Sigma, Sentinel, Elastic, Chronicle)
+- Additional adapters (Chronicle, OCSF)
 
 ## Installation
 
@@ -91,6 +97,27 @@ odcp scan splunk /path/to/splunk_app --output report.md --format markdown
 
 # HTML report
 odcp scan splunk /path/to/splunk_app --output report.html --format html
+```
+
+### Scan Sigma rules
+
+```bash
+odcp scan sigma /path/to/sigma_rules
+odcp scan sigma /path/to/sigma_rules --output report.json
+```
+
+### Scan Elastic rules
+
+```bash
+odcp scan elastic /path/to/elastic_rules
+odcp scan elastic /path/to/elastic_rules --output report.json
+```
+
+### Scan Sentinel analytics rules
+
+```bash
+odcp scan sentinel /path/to/sentinel_rules
+odcp scan sentinel /path/to/sentinel_rules --output report.json
 ```
 
 ### Scan with runtime health (requires live Splunk)
@@ -159,7 +186,7 @@ pytest tests/ -v
 odcp/
 ├── models/          # Pydantic data models (unified schema + runtime health)
 ├── core/            # Engine, dependency graph
-├── adapters/        # Vendor adapters (Splunk static + REST API client)
+├── adapters/        # Vendor adapters (Splunk, Sigma, Elastic, Sentinel)
 ├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization
 ├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
@@ -173,7 +200,7 @@ odcp/
 | 1     | Splunk static readiness analysis                      | **Complete** |
 | 2     | Splunk runtime signals and health                     | **Complete** |
 | 3     | Semantic gap analysis and optimization                | **Complete** |
-| 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | Planned          |
+| 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | **Complete**     |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.
 
