@@ -23,7 +23,7 @@ ODCP provides a **unified control plane** that models environments, detections, 
 |-------|------------|
 | **CLI / API** | `odcp scan`, `odcp report`, `odcp graph` |
 | **Reporting** | JSON, Markdown, HTML |
-| **Analyzers** | Readiness, Dependency, **Runtime Health**, *(Future: Semantic Gap, Optimization)* |
+| **Analyzers** | Readiness, Dependency, **Runtime Health**, **Coverage**, **Optimization** |
 | **Core Engine** | Dependency Graph, Scoring, Findings |
 | **Adapters** | **Splunk** (static + runtime), *(Future: Sigma, Sentinel, Elastic, Chronicle)* |
 | **Collectors** | Local, **Splunk REST API**, *(Future: Remote)* |
@@ -51,10 +51,16 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **Combined scoring** — Merges static readiness + runtime health into a single combined score with configurable weights
 - **Runtime CLI flags** — `--api-url`, `--token`, `--username`, `--password`, `--verify-ssl`, `--indexes`
 
+**Phase 3 — Semantic Gap and Optimization:**
+- **MITRE ATT&CK coverage** — 25+ technique catalog, heuristic detection mapping, per-tactic coverage breakdown
+- **Data source inventory** — Extracts index/sourcetype/data model references from SPL, identifies gaps vs. known sources
+- **Coverage gap analysis** — Identifies uncovered MITRE techniques with remediation guidance
+- **Optimization analyzer** — Ranks missing dependencies by unblock potential with effort-adjusted impact scores
+- **What-if analysis** — Simulates fixing each dependency and predicts new readiness score
+- **CLI `--coverage` flag** — Adds coverage and optimization panels to scan output
+
 ### What's placeholder / future
 
-- Semantic gap analyzer (data source coverage analysis)
-- Optimization analyzer (prioritized remediation)
 - Additional adapters (Sigma, Sentinel, Elastic, Chronicle)
 
 ## Installation
@@ -100,6 +106,18 @@ odcp scan splunk /path/to/splunk_app \
   --indexes main,security
 ```
 
+### Scan with MITRE ATT&CK coverage and optimization
+
+```bash
+# Add coverage analysis to any scan
+odcp scan splunk /path/to/splunk_app --coverage
+
+# Combined: static + runtime + coverage
+odcp scan splunk /path/to/splunk_app \
+  --api-url https://splunk:8089 --token YOUR_TOKEN \
+  --coverage --indexes main,security
+```
+
 ### Convert report formats
 
 ```bash
@@ -142,7 +160,7 @@ odcp/
 ├── models/          # Pydantic data models (unified schema + runtime health)
 ├── core/            # Engine, dependency graph
 ├── adapters/        # Vendor adapters (Splunk static + REST API client)
-├── analyzers/       # Readiness, dependency, runtime health analyzers
+├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization
 ├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
 └── cli/             # Typer CLI interface
@@ -154,7 +172,7 @@ odcp/
 | ----- | ----------------------------------------------------- | ---------------- |
 | 1     | Splunk static readiness analysis                      | **Complete** |
 | 2     | Splunk runtime signals and health                     | **Complete** |
-| 3     | Semantic gap analysis and optimization                | Planned          |
+| 3     | Semantic gap analysis and optimization                | **Complete** |
 | 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | Planned          |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.

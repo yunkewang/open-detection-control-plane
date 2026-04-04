@@ -62,6 +62,9 @@ def scan_splunk(
     indexes: Optional[str] = typer.Option(
         None, "--indexes", help="Comma-separated index names to check health for."
     ),
+    coverage: bool = typer.Option(
+        False, "--coverage", help="Enable MITRE ATT&CK coverage and optimization analysis."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ) -> None:
     """Scan a Splunk app/TA bundle for detection readiness.
@@ -85,6 +88,8 @@ def scan_splunk(
     engine = ScanEngine(adapter)
 
     runtime_enabled = api_url is not None
+    index_list = [i.strip() for i in indexes.split(",")] if indexes else None
+
     if runtime_enabled:
         from odcp.adapters.splunk.api_client import SplunkAPIClient
         from odcp.collectors.api import APICollector
@@ -97,13 +102,23 @@ def scan_splunk(
             verify_ssl=verify_ssl,
         )
         collector = APICollector(client)
-        index_list = [i.strip() for i in indexes.split(",")] if indexes else None
 
         with console.status("[bold blue]Scanning (static + runtime)..."):
             report = engine.scan_with_runtime(path, collector, index_names=index_list)
     else:
         with console.status("[bold blue]Scanning..."):
             report = engine.scan(path)
+
+    if coverage:
+        from odcp.core.graph import DependencyGraph
+
+        with console.status("[bold blue]Analyzing coverage and optimization..."):
+            graph = DependencyGraph()
+            graph.build_from_scan(report.detections, report.dependencies)
+            report = engine.enrich_with_coverage(
+                report, graph,
+                known_indexes=index_list,
+            )
 
     if output:
         _write_report(report, output, fmt)
@@ -112,6 +127,8 @@ def scan_splunk(
         _print_summary(report)
         if runtime_enabled:
             _print_runtime_summary(report)
+        if coverage:
+            _print_coverage_summary(report)
         console.print(
             "\n[dim]Use --output report.json to save full report, "
             "or --format markdown/html for other formats.[/dim]"
@@ -319,6 +336,115 @@ def _print_runtime_summary(report) -> None:
             console.print(f"  [dim]{err}[/dim]")
         if len(errors) > 5:
             console.print(f"  [dim]... and {len(errors) - 5} more[/dim]")
+
+
+def _print_coverage_summary(report) -> None:
+    """Print MITRE ATT&CK coverage and optimization summary."""
+    meta = report.metadata
+    if not meta.get("coverage_enabled"):
+        return
+
+    # -- MITRE Coverage --
+    cs = meta.get("coverage_summary", {})
+    if cs:
+        total = cs.get("total_techniques_in_scope", 0)
+        covered = cs.get("covered", 0)
+        partial = cs.get("partially_covered", 0)
+        uncovered = cs.get("uncovered", 0)
+        score = cs.get("coverage_score", 0)
+
+        cov_text = (
+            f"[bold]Techniques in scope:[/bold] {total}\n"
+            f"[green]Covered:[/green] {covered}  "
+            f"[yellow]Partial:[/yellow] {partial}  "
+            f"[red]Uncovered:[/red] {uncovered}\n"
+            f"[bold]Coverage score:[/bold] {score:.0%}"
+        )
+        console.print(Panel(cov_text, title="MITRE ATT&CK Coverage", border_style="cyan"))
+
+        # Tactic breakdown
+        by_tactic = cs.get("by_tactic", {})
+        if by_tactic:
+            tbl = Table(title="Coverage by Tactic")
+            tbl.add_column("Tactic", style="bold")
+            tbl.add_column("Covered", justify="right", style="green")
+            tbl.add_column("Partial", justify="right", style="yellow")
+            tbl.add_column("Uncovered", justify="right", style="red")
+            for tactic, counts in sorted(by_tactic.items()):
+                tbl.add_row(
+                    tactic,
+                    str(counts.get("covered", 0)),
+                    str(counts.get("partial", 0)),
+                    str(counts.get("uncovered", 0)),
+                )
+            console.print(tbl)
+
+    # -- Data source gaps --
+    ds = meta.get("data_source_inventory", {})
+    gaps = [s for s in ds.get("sources", []) if s.get("expected") and not s.get("observed")]
+    if gaps:
+        console.print(f"\n[yellow]Data source gaps ({len(gaps)}):[/yellow]")
+        for g in gaps[:10]:
+            console.print(
+                f"  [dim]{g.get('source_type', '?')}:[/dim] "
+                f"{g.get('name', '?')} "
+                f"[dim]({g.get('detection_count', 0)} detections)[/dim]"
+            )
+
+    # -- Optimization --
+    opt = meta.get("optimization_summary", {})
+    if opt:
+        current = opt.get("current_score", 0)
+        max_score = opt.get("max_achievable_score", 0)
+        top_rems = opt.get("top_remediations", [])
+
+        opt_text = (
+            f"[bold]Current score:[/bold] {current:.0%}\n"
+            f"[bold]Max achievable:[/bold] {max_score:.0%}\n"
+            f"[bold]Blocked detections:[/bold] "
+            f"{opt.get('total_blocked_detections', 0)}\n"
+            f"[bold]Missing dependencies:[/bold] "
+            f"{opt.get('total_missing_dependencies', 0)}"
+        )
+        console.print(Panel(opt_text, title="Optimization", border_style="green"))
+
+        if top_rems:
+            tbl = Table(title="Top Remediations (What-If)")
+            tbl.add_column("#", justify="right")
+            tbl.add_column("Dependency", style="bold")
+            tbl.add_column("Kind")
+            tbl.add_column("Unblocks", justify="right", style="green")
+            tbl.add_column("Affects", justify="right")
+            tbl.add_column("Effort")
+            for r in top_rems[:10]:
+                tbl.add_row(
+                    str(r.get("rank", "")),
+                    r.get("dependency_name", ""),
+                    r.get("dependency_kind", ""),
+                    str(r.get("blocked_detections_unblocked", 0)),
+                    str(r.get("affected_detection_count", 0)),
+                    r.get("effort", ""),
+                )
+            console.print(tbl)
+
+        # What-if results
+        what_ifs = opt.get("what_if_results", [])
+        improving = [w for w in what_ifs if w.get("score_improvement", 0) > 0]
+        if improving:
+            tbl = Table(title="What-If Score Improvements")
+            tbl.add_column("Fix", style="bold")
+            tbl.add_column("New Score", justify="right")
+            tbl.add_column("Improvement", justify="right", style="green")
+            tbl.add_column("Unblocks", justify="right")
+            for w in improving[:10]:
+                tbl.add_row(
+                    f"{w.get('fixed_dependency_kind', '')}: "
+                    f"{w.get('fixed_dependency_name', '')}",
+                    f"{w.get('new_overall_score', 0):.0%}",
+                    f"+{w.get('score_improvement', 0):.0%}",
+                    str(len(w.get("detections_unblocked", []))),
+                )
+            console.print(tbl)
 
 
 if __name__ == "__main__":

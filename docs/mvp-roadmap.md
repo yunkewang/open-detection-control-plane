@@ -50,18 +50,26 @@
 
 ---
 
-## Phase 3: Semantic Gap and Optimization
+## Phase 3: Semantic Gap and Optimization — Complete
 
 **Goal:** Identify coverage gaps and prioritize remediation.
 
-### Planned
+### Delivered
 
-- Data source inventory (what's logging vs. what's expected)
-- MITRE ATT&CK mapping and coverage gap analysis
-- Detection priority scoring based on risk and coverage
+- MITRE ATT&CK technique catalog (25+ curated techniques across all tactics)
+- Heuristic detection-to-technique mapping (keyword + SPL pattern matching + tag support)
+- Coverage gap analysis: covered / partial / uncovered classification per technique
+- Per-tactic coverage breakdown
+- Data source inventory: index, sourcetype, and data model extraction from SPL
+- Data source gap detection (expected vs. observed)
 - Optimization analyzer with ranked remediation recommendations
-- Estimated effort and impact for each remediation
-- "What-if" analysis (if I fix X, how many detections unblock?)
+- Impact scoring: effort-adjusted priority ranking by unblock potential
+- "What-if" analysis: simulates fixing each dependency and computes new readiness score
+- Max achievable readiness score computation
+- Coverage and optimization findings with remediation steps
+- CLI `--coverage` flag for `odcp scan splunk`
+- Rich CLI output: MITRE coverage panel, tactic breakdown, data source gaps, what-if table
+- Unit and integration tests for all Phase 3 components (156 tests total)
 
 ---
 
@@ -73,7 +81,7 @@
 
 | Adapter | Input Format | Status |
 |---------|-------------|--------|
-| Splunk | .conf files, REST API | **Phase 1 + 2 complete** |
+| Splunk | .conf files, REST API | **Phase 1 + 2 + 3 complete** |
 | Sigma | YAML rules | Planned |
 | Sentinel (Microsoft) | KQL analytics, ARM templates | Planned |
 | Elastic | JSON detection rules, Kibana exports | Planned |

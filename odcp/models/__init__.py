@@ -1,5 +1,16 @@
 """ODCP data models."""
 
+from odcp.models.coverage import (
+    CoverageSummary,
+    DataSource,
+    DataSourceInventory,
+    MitreMapping,
+    MitreTechnique,
+    OptimizationSummary,
+    RemediationPriority,
+    TechniqueCoverage,
+    WhatIfResult,
+)
 from odcp.models.dependency import (
     Dependency,
     DependencyKind,
@@ -30,7 +41,10 @@ from odcp.models.scoring import ReadinessScore, ReadinessStatus
 
 __all__ = [
     "CombinedReadinessScore",
+    "CoverageSummary",
     "DataModelHealth",
+    "DataSource",
+    "DataSourceInventory",
     "Dependency",
     "DependencyKind",
     "DependencyStats",
@@ -44,15 +58,21 @@ __all__ = [
     "IndexHealth",
     "KnowledgeObject",
     "LookupHealth",
+    "MitreMapping",
+    "MitreTechnique",
+    "OptimizationSummary",
     "Platform",
     "ReadinessScore",
     "ReadinessStatus",
     "ReadinessSummary",
     "RemediationAction",
+    "RemediationPriority",
     "RuntimeHealthScore",
     "RuntimeHealthStatus",
     "RuntimeHealthSummary",
     "RuntimeSignal",
     "ScanReport",
     "SavedSearchHealth",
+    "TechniqueCoverage",
+    "WhatIfResult",
 ]
