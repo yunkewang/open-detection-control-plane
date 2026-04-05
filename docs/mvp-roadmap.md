@@ -22,9 +22,7 @@
 
 - Only parses local config files (no API/runtime data)
 - Does not handle all Splunk edge cases (e.g., app inheritance chains, btool resolution)
-- Lookup file existence is not verified on disk
 - Data model field-level analysis not yet implemented
-- No tag-based dependency tracking yet
 
 ---
 
@@ -113,3 +111,20 @@
 - Detection-as-code workflow support
 - Distributed collection agents
 - SaaS offering
+
+---
+
+## Post-MVP Backlog (Updated April 5, 2026)
+
+### Recently Completed
+
+- ✅ Lookup backing file verification for Splunk CSV lookups (transforms.conf + lookups/ checks)
+- ✅ Tag-based dependency tracking from SPL (`tag=` and `tag::field=`) and `tags.conf`
+
+### Newly Added, Research-Informed Items
+
+- Add Sigma correlation meta-rule support (Sigma spec v2.1.0, including temporal/value_count/event_count correlation blocks)
+- Add Sigma filter/meta-filter support to better model environment-specific exclusions
+- Add ATT&CK catalog auto-refresh from ATT&CK STIX/TAXII feeds to reduce manual technique curation drift
+- Add OCSF-native dependency taxonomy mapping so detections can be normalized against common event classes
+- Add Splunk Cloud CI integration checks for app readiness workflows (e.g., AppInspect/ACS-aligned validation steps)

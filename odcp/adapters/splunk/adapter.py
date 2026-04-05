@@ -36,6 +36,7 @@ _REF_KIND_MAP: dict[str, DependencyKind] = {
     "lookup": DependencyKind.lookup,
     "data_model": DependencyKind.data_model,
     "saved_search": DependencyKind.saved_search,
+    "tag": DependencyKind.tag,
 }
 
 
@@ -145,12 +146,29 @@ class SplunkAdapter(BaseAdapter):
             if "filename" in attrs:
                 obj.kind = DependencyKind.lookup
                 obj.definition = attrs["filename"]
+                obj.metadata["backing_file_exists"] = self._lookup_file_exists(
+                    path,
+                    attrs["filename"],
+                )
             elif "external_type" in attrs:
                 obj.kind = DependencyKind.lookup
                 obj.definition = attrs.get("external_cmd", attrs.get("external_type"))
             else:
                 obj.definition = attrs.get("REGEX", attrs.get("REPORT", ""))
             objects.append(obj)
+
+        # Tags
+        for _, attrs in self._load_conf(path, "tags.conf").items():
+            for tag_name, tag_enabled in attrs.items():
+                if tag_enabled.strip().lower() not in {"1", "true", "enabled"}:
+                    continue
+                objects.append(
+                    KnowledgeObject(
+                        kind=DependencyKind.tag,
+                        name=tag_name,
+                        source_file="tags.conf",
+                    )
+                )
 
         return objects
 
@@ -176,6 +194,12 @@ class SplunkAdapter(BaseAdapter):
                     # Check if resolved
                     ko = ko_index.get((kind, ref_name))
                     status = DependencyStatus.resolved if ko else DependencyStatus.missing
+                    if (
+                        ko
+                        and kind == DependencyKind.lookup
+                        and ko.metadata.get("backing_file_exists") is False
+                    ):
+                        status = DependencyStatus.degraded
 
                     dep = Dependency(
                         kind=kind,
@@ -242,3 +266,18 @@ class SplunkAdapter(BaseAdapter):
         if default_stanzas or local_stanzas:
             return merge_stanzas(default_stanzas, local_stanzas)
         return {}
+
+    @staticmethod
+    def _lookup_file_exists(path: Path, filename: str) -> bool:
+        """Check whether a lookup file exists in standard Splunk app locations."""
+        file_path = Path(filename)
+        if file_path.is_absolute():
+            return file_path.exists()
+
+        lookup_dirs = ("lookups", "default/lookups", "local/lookups")
+        for lookup_dir in lookup_dirs:
+            candidate = path / lookup_dir / file_path.name
+            if candidate.exists():
+                return True
+
+        return False

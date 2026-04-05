@@ -70,6 +70,23 @@ def extract_savedsearch_references(spl: str) -> list[str]:
     return _dedupe([m.strip() for m in matches])
 
 
+def extract_tag_references(spl: str) -> list[str]:
+    """Extract tag= references from SPL.
+
+    Matches:
+    - tag=<name>
+    - tag::<field>=<name>
+    """
+    patterns = [
+        r'\btag\s*=\s*"?([a-zA-Z_][a-zA-Z0-9_\-]*)"?',
+        r'\btag::[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*"?([a-zA-Z_][a-zA-Z0-9_\-]*)"?',
+    ]
+    matches: list[str] = []
+    for p in patterns:
+        matches.extend(re.findall(p, spl, re.IGNORECASE))
+    return _dedupe(matches)
+
+
 def extract_all_references(spl: str) -> dict[str, list[str]]:
     """Extract all dependency references from an SPL query."""
     return {
@@ -78,6 +95,7 @@ def extract_all_references(spl: str) -> dict[str, list[str]]:
         "lookup": extract_lookup_references(spl),
         "data_model": extract_datamodel_references(spl),
         "saved_search": extract_savedsearch_references(spl),
+        "tag": extract_tag_references(spl),
     }
 
 
