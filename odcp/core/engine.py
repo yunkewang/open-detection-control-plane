@@ -95,6 +95,7 @@ class ScanEngine:
         graph: DependencyGraph,
         known_indexes: Optional[list[str]] = None,
         known_sourcetypes: Optional[list[str]] = None,
+        stix_source: Optional["Path"] = None,
     ) -> ScanReport:
         """Enrich an existing report with coverage and optimization analysis.
 
@@ -104,6 +105,16 @@ class ScanEngine:
         from odcp.analyzers.coverage import CoverageAnalyzer, OptimizationAnalyzer
 
         logger.info("Running coverage and optimization analysis...")
+
+        # Optional STIX catalog refresh
+        if stix_source:
+            from odcp.analyzers.coverage.stix_refresh import refresh_catalog
+            refreshed = refresh_catalog(stix_source)
+            if refreshed:
+                from odcp.analyzers.coverage.stix_refresh import merge_catalogs
+                from odcp.analyzers.coverage.mitre_catalog import TECHNIQUE_CATALOG
+                merged = merge_catalogs(TECHNIQUE_CATALOG, refreshed)
+                logger.info("STIX refresh: %d techniques in merged catalog", len(merged))
 
         # Coverage analysis
         coverage_analyzer = CoverageAnalyzer()
