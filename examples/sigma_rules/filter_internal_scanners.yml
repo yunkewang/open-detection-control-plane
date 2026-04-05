@@ -1,0 +1,21 @@
+title: Exclude Internal Vulnerability Scanners
+id: e9c0a4d3-3456-7890-bcde-f01234567890
+type: filter
+status: test
+description: Filters out events from known internal vulnerability scanner IPs to reduce false positives.
+author: ODCP Example
+date: 2026/04/01
+logsource:
+    category: network_connection
+    product: windows
+rules:
+    - "*"
+detection:
+    filter:
+        SourceAddress|contains:
+            - "10.0.100."
+            - "10.0.101."
+        ProcessName|endswith:
+            - "\\nessus.exe"
+            - "\\qualys.exe"
+    condition: not filter

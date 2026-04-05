@@ -65,6 +65,12 @@ def scan_splunk(
     coverage: bool = typer.Option(
         False, "--coverage", help="Enable MITRE ATT&CK coverage and optimization analysis."
     ),
+    cloud_check: bool = typer.Option(
+        False, "--cloud-check", help="Run Splunk Cloud readiness checks (AppInspect/ACS-aligned)."
+    ),
+    stix_file: Optional[str] = typer.Option(
+        None, "--stix-file", help="Path to a local ATT&CK STIX JSON bundle for catalog refresh."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ) -> None:
     """Scan a Splunk app/TA bundle for detection readiness.
@@ -115,10 +121,30 @@ def scan_splunk(
         with console.status("[bold blue]Analyzing coverage and optimization..."):
             graph = DependencyGraph()
             graph.build_from_scan(report.detections, report.dependencies)
+
+            # Optional STIX catalog refresh
+            stix_path = Path(stix_file) if stix_file else None
             report = engine.enrich_with_coverage(
                 report, graph,
                 known_indexes=index_list,
+                stix_source=stix_path,
             )
+
+    if cloud_check:
+        from odcp.analyzers.splunk_cloud import SplunkCloudChecker
+
+        with console.status("[bold blue]Running Splunk Cloud readiness checks..."):
+            checker = SplunkCloudChecker()
+            spl_pairs = [(d.name, d.search_query) for d in report.detections]
+            cloud_findings = checker.check(path, detections_spl=spl_pairs)
+            if cloud_findings:
+                merged_findings = list(report.findings) + cloud_findings
+                meta = dict(report.metadata)
+                meta["cloud_check_enabled"] = True
+                meta["cloud_check_issues"] = len(cloud_findings)
+                report = report.model_copy(
+                    update={"findings": merged_findings, "metadata": meta}
+                )
 
     if output:
         _write_report(report, output, fmt)
@@ -129,6 +155,8 @@ def scan_splunk(
             _print_runtime_summary(report)
         if coverage:
             _print_coverage_summary(report)
+        if cloud_check:
+            _print_cloud_check_summary(report)
         console.print(
             "\n[dim]Use --output report.json to save full report, "
             "or --format markdown/html for other formats.[/dim]"
@@ -457,6 +485,9 @@ def scan_sigma(
     fmt: ReportFormat = typer.Option(
         ReportFormat.json, "--format", "-f", help="Output format."
     ),
+    ocsf: bool = typer.Option(
+        False, "--ocsf", help="Enable OCSF normalization mapping."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ) -> None:
     """Scan Sigma YAML rules for detection readiness."""
@@ -480,11 +511,30 @@ def scan_sigma(
     with console.status("[bold blue]Scanning Sigma rules..."):
         report = engine.scan(path)
 
+    # Enrich with correlation/filter metadata
+    meta = dict(report.metadata)
+    if adapter.correlations:
+        meta["correlations"] = [c.model_dump() for c in adapter.correlations]
+    if adapter.filters:
+        meta["filters"] = [f.model_dump() for f in adapter.filters]
+
+    if ocsf:
+        from odcp.analyzers.ocsf_mapper import OcsfMapper
+
+        with console.status("[bold blue]Running OCSF normalization..."):
+            mapper = OcsfMapper()
+            ocsf_result = mapper.normalize(report.detections, report.dependencies, "sigma")
+            meta["ocsf_normalization"] = ocsf_result.model_dump()
+
+    if meta != report.metadata:
+        report = report.model_copy(update={"metadata": meta})
+
     if output:
         _write_report(report, output, fmt)
         console.print(f"[green]Report written to:[/green] {output}")
     else:
         _print_summary(report)
+        _print_sigma_extras(adapter, report)
         console.print(
             "\n[dim]Use --output report.json to save full report.[/dim]"
         )
@@ -574,6 +624,116 @@ def scan_sentinel(
         console.print(
             "\n[dim]Use --output report.json to save full report.[/dim]"
         )
+
+
+def _print_cloud_check_summary(report) -> None:
+    """Print Splunk Cloud readiness check results."""
+    meta = report.metadata
+    if not meta.get("cloud_check_enabled"):
+        return
+
+    issue_count = meta.get("cloud_check_issues", 0)
+    cloud_findings = [
+        f for f in report.findings
+        if f.detection_id == "__cloud_readiness__"
+    ]
+
+    if not cloud_findings:
+        console.print(
+            Panel(
+                "[green]No Splunk Cloud readiness issues found.[/green]",
+                title="Splunk Cloud Readiness",
+                border_style="green",
+            )
+        )
+        return
+
+    table = Table(title=f"Splunk Cloud Readiness Issues ({issue_count})")
+    table.add_column("Severity", style="bold")
+    table.add_column("Issue")
+    table.add_column("Description")
+
+    for f in cloud_findings:
+        severity_style = {
+            "critical": "red bold",
+            "high": "red",
+            "medium": "yellow",
+            "low": "dim",
+            "info": "dim",
+        }.get(f.severity.value, "")
+        table.add_row(
+            f"[{severity_style}]{f.severity.value}[/{severity_style}]",
+            f.title,
+            f.description[:80] + "..." if len(f.description) > 80 else f.description,
+        )
+
+    console.print(table)
+
+
+def _print_sigma_extras(adapter, report) -> None:
+    """Print Sigma correlation and filter summaries."""
+    from odcp.adapters.sigma import SigmaAdapter
+
+    if not isinstance(adapter, SigmaAdapter):
+        return
+
+    if adapter.correlations:
+        table = Table(title=f"Sigma Correlation Rules ({len(adapter.correlations)})")
+        table.add_column("Name", style="bold")
+        table.add_column("Type")
+        table.add_column("Rules Referenced", justify="right")
+        table.add_column("Timespan")
+        table.add_column("Condition")
+
+        for c in adapter.correlations:
+            table.add_row(
+                c.name,
+                c.correlation_type.value,
+                str(len(c.rule_references)),
+                c.timespan or "-",
+                c.condition or "-",
+            )
+        console.print(table)
+
+    if adapter.filters:
+        table = Table(title=f"Sigma Filters ({len(adapter.filters)})")
+        table.add_column("Name", style="bold")
+        table.add_column("Targets", justify="right")
+        table.add_column("Logsource Filter")
+
+        for f in adapter.filters:
+            ls = ""
+            if f.logsource_filter:
+                ls = ", ".join(f"{k}={v}" for k, v in f.logsource_filter.items())
+            table.add_row(
+                f.name,
+                str(len(f.target_rules)),
+                ls or "-",
+            )
+        console.print(table)
+
+    meta = report.metadata
+    ocsf = meta.get("ocsf_normalization")
+    if ocsf:
+        mapped = ocsf.get("mapped_detections", 0)
+        total = ocsf.get("total_detections", 0)
+        unmapped = ocsf.get("unmapped_detections", 0)
+        by_cat = ocsf.get("coverage_by_category", {})
+
+        ocsf_text = (
+            f"[bold]Total detections:[/bold] {total}\n"
+            f"[green]OCSF-mapped:[/green] {mapped}  "
+            f"[yellow]Unmapped:[/yellow] {unmapped}"
+        )
+        console.print(Panel(ocsf_text, title="OCSF Normalization", border_style="cyan"))
+
+        if by_cat:
+            tbl = Table(title="OCSF Coverage by Category")
+            tbl.add_column("Category", style="bold")
+            tbl.add_column("Mappings", justify="right")
+            for cat, count in sorted(by_cat.items()):
+                tbl.add_row(cat, str(count))
+            console.print(tbl)
 
 
 if __name__ == "__main__":

@@ -114,17 +114,45 @@
 
 ---
 
-## Post-MVP Backlog (Updated April 5, 2026)
+## Phase 5: Post-MVP Enhancements — Complete
 
-### Recently Completed
+**Goal:** Address backlog items for cross-platform normalization, advanced Sigma support, and cloud readiness.
+
+### Delivered
+
+- **Sigma correlation meta-rules** (`odcp/models/correlation.py`, `odcp/adapters/sigma/adapter.py`) — Parses Sigma v2.1.0 correlation rules: event_count, value_count, and temporal types with group-by, timespan, and condition support
+- **Sigma filter/meta-filter support** — Parses filter and meta_filter rule types for environment-specific exclusions; filters are accessible via `adapter.filters` and included in report metadata
+- **ATT&CK STIX/TAXII catalog refresh** (`odcp/analyzers/coverage/stix_refresh.py`) — Fetches the official MITRE ATT&CK Enterprise STIX bundle, parses attack-pattern objects, and merges with curated catalog; supports local file or network fetch with fallback
+- **OCSF-native dependency taxonomy mapping** (`odcp/models/ocsf.py`, `odcp/analyzers/ocsf_mapper.py`) — Maps vendor data sources (Sigma logsources, Splunk sourcetypes, Elastic indexes, Sentinel tables) to OCSF v1.1 event classes; CLI: `odcp scan sigma --ocsf`
+- **Splunk Cloud CI integration checks** (`odcp/analyzers/splunk_cloud.py`) — Validates app bundles for cloud readiness: disallowed files, app.conf metadata, app.manifest, restricted SPL commands, Python 3 compatibility; CLI: `odcp scan splunk --cloud-check`
+- Example Sigma correlation and filter rules in `examples/sigma_rules/`
+- Unit and integration tests for all Phase 5 components (287 tests total)
+
+### CLI Additions
+
+- `odcp scan sigma --ocsf` — OCSF normalization mapping
+- `odcp scan splunk --cloud-check` — Splunk Cloud readiness validation
+- `odcp scan splunk --stix-file <path>` — Use local ATT&CK STIX bundle for catalog refresh
+
+---
+
+## Post-MVP Backlog
+
+### Completed
 
 - ✅ Lookup backing file verification for Splunk CSV lookups (transforms.conf + lookups/ checks)
 - ✅ Tag-based dependency tracking from SPL (`tag=` and `tag::field=`) and `tags.conf`
+- ✅ Sigma correlation meta-rule support (Sigma spec v2.1.0)
+- ✅ Sigma filter/meta-filter support for environment-specific exclusions
+- ✅ ATT&CK catalog auto-refresh from STIX/TAXII feeds
+- ✅ OCSF-native dependency taxonomy mapping
+- ✅ Splunk Cloud CI integration checks (AppInspect/ACS-aligned)
 
-### Newly Added, Research-Informed Items
+### Future Items
 
-- Add Sigma correlation meta-rule support (Sigma spec v2.1.0, including temporal/value_count/event_count correlation blocks)
-- Add Sigma filter/meta-filter support to better model environment-specific exclusions
-- Add ATT&CK catalog auto-refresh from ATT&CK STIX/TAXII feeds to reduce manual technique curation drift
-- Add OCSF-native dependency taxonomy mapping so detections can be normalized against common event classes
-- Add Splunk Cloud CI integration checks for app readiness workflows (e.g., AppInspect/ACS-aligned validation steps)
+- Chronicle (Google) YARA-L adapter
+- Unified cross-platform readiness view
+- Detection migration analysis (e.g., Splunk → Sentinel feasibility)
+- Web dashboard UI
+- CI/CD integration (validate detections in PRs)
+- Detection-as-code workflow support

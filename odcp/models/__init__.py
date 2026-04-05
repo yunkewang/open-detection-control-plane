@@ -1,5 +1,6 @@
 """ODCP data models."""
 
+from odcp.models.correlation import CorrelationRule, CorrelationType, SigmaFilter
 from odcp.models.coverage import (
     CoverageSummary,
     DataSource,
@@ -25,6 +26,7 @@ from odcp.models.finding import (
     FindingSeverity,
     RemediationAction,
 )
+from odcp.models.ocsf import OcsfEventClass, OcsfMapping, OcsfNormalizationResult
 from odcp.models.report import DependencyStats, ReadinessSummary, ScanReport
 from odcp.models.runtime import (
     CombinedReadinessScore,
@@ -41,6 +43,8 @@ from odcp.models.scoring import ReadinessScore, ReadinessStatus
 
 __all__ = [
     "CombinedReadinessScore",
+    "CorrelationRule",
+    "CorrelationType",
     "CoverageSummary",
     "DataModelHealth",
     "DataSource",
@@ -60,6 +64,9 @@ __all__ = [
     "LookupHealth",
     "MitreMapping",
     "MitreTechnique",
+    "OcsfEventClass",
+    "OcsfMapping",
+    "OcsfNormalizationResult",
     "OptimizationSummary",
     "Platform",
     "ReadinessScore",
@@ -73,6 +80,7 @@ __all__ = [
     "RuntimeSignal",
     "ScanReport",
     "SavedSearchHealth",
+    "SigmaFilter",
     "TechniqueCoverage",
     "WhatIfResult",
 ]
