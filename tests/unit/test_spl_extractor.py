@@ -9,6 +9,7 @@ from odcp.adapters.splunk.spl_extractor import (
     extract_lookup_references,
     extract_macro_references,
     extract_savedsearch_references,
+    extract_tag_references,
 )
 
 
@@ -117,3 +118,19 @@ class TestExtractAll:
         result = extract_all_references("")
         for v in result.values():
             assert v == []
+
+
+class TestTagExtraction:
+    def test_simple_tag(self):
+        assert extract_tag_references("index=main tag=malware") == ["malware"]
+
+    def test_tag_field_syntax(self):
+        assert extract_tag_references('tag::eventtype="failed_login"') == ["failed_login"]
+
+    def test_multiple_tags_deduped(self):
+        spl = 'tag=malware OR tag="malware" OR tag::host=suspicious'
+        assert extract_tag_references(spl) == ["malware", "suspicious"]
+
+    def test_extract_all_includes_tags(self):
+        refs = extract_all_references("index=main tag=exfiltration")
+        assert refs["tag"] == ["exfiltration"]
