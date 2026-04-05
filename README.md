@@ -23,11 +23,11 @@ ODCP provides a **unified control plane** that models environments, detections, 
 |-------|------------|
 | **CLI / API** | `odcp scan`, `odcp report`, `odcp graph` |
 | **Reporting** | JSON, Markdown, HTML |
-| **Analyzers** | Readiness, Dependency, **Runtime Health**, **Coverage**, **Optimization** |
-| **Core Engine** | Dependency Graph, Scoring, Findings |
-| **Adapters** | **Splunk** (static + runtime), **Sigma**, **Elastic**, **Sentinel**, *(Future: Chronicle)* |
-| **Collectors** | Local, **Splunk REST API**, *(Future: Remote)* |
-| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, ScanReport |
+| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI** |
+| **Core Engine** | Dependency Graph, Scoring, Findings, **STIX Refresh** |
+| **Adapters** | Splunk (static + runtime), Sigma **(+ correlations/filters)**, Elastic, Sentinel, *(Future: Chronicle)* |
+| **Collectors** | Local, Splunk REST API, *(Future: Remote)* |
+| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, **CorrelationRule**, **SigmaFilter**, **OcsfMapping**, ScanReport |
 
 ## Current MVP (v0.1.0)
 
@@ -65,9 +65,20 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **Sentinel adapter** — Parses YAML/JSON analytics rules, extracts KQL table references, data connector dependencies, and MITRE technique mappings
 - **CLI commands** — `odcp scan sigma`, `odcp scan elastic`, `odcp scan sentinel`
 
-### What's placeholder / future
+**Phase 5 — Post-MVP Enhancements:**
+- **Sigma correlation meta-rules** — Parses Sigma v2.1.0 correlation rules (`event_count`, `value_count`, `temporal`) with group-by, timespan, and threshold conditions; models cross-rule dependencies
+- **Sigma filters** — Parses `filter` and `meta_filter` rule types for environment-specific exclusions without modifying original rules
+- **ATT&CK STIX/TAXII catalog refresh** — Fetches the official MITRE ATT&CK Enterprise STIX bundle and merges with the curated catalog to reduce technique drift; supports local file or network fetch with automatic fallback
+- **OCSF normalization** — Maps vendor data sources (Sigma logsources, Splunk sourcetypes, Elastic indexes, Sentinel tables) to OCSF v1.1 event classes for cross-platform normalization
+- **Splunk Cloud CI checks** — Validates app bundles for cloud readiness: disallowed file types, app.conf metadata, app.manifest, restricted SPL commands, Python 3 compatibility
+- **CLI flags** — `--ocsf`, `--cloud-check`, `--stix-file`
 
-- Additional adapters (Chronicle, OCSF)
+### Future
+
+- Chronicle (Google) YARA-L adapter
+- Unified cross-platform readiness view
+- Detection migration analysis
+- Web dashboard UI
 
 ## Installation
 
@@ -104,7 +115,14 @@ odcp scan splunk /path/to/splunk_app --output report.html --format html
 ```bash
 odcp scan sigma /path/to/sigma_rules
 odcp scan sigma /path/to/sigma_rules --output report.json
+
+# With OCSF normalization (maps logsources to OCSF event classes)
+odcp scan sigma /path/to/sigma_rules --ocsf
 ```
+
+> Sigma scans automatically detect and parse **correlation meta-rules**
+> (event_count, value_count, temporal) and **filter rules** alongside
+> standard detections.
 
 ### Scan Elastic rules
 
@@ -145,6 +163,16 @@ odcp scan splunk /path/to/splunk_app \
   --coverage --indexes main,security
 ```
 
+### Splunk Cloud readiness checks
+
+```bash
+# Validate an app for Splunk Cloud deployment
+odcp scan splunk /path/to/splunk_app --cloud-check
+
+# Use a local ATT&CK STIX bundle for coverage analysis
+odcp scan splunk /path/to/splunk_app --coverage --stix-file enterprise-attack.json
+```
+
 ### Convert report formats
 
 ```bash
@@ -178,16 +206,17 @@ odcp graph report.json
 
 ```bash
 pytest tests/ -v
+# 287 tests covering all adapters, analyzers, models, and integrations
 ```
 
 ## Project Structure
 
 ```
 odcp/
-├── models/          # Pydantic data models (unified schema + runtime health)
+├── models/          # Pydantic data models (detection, dependency, coverage, correlation, OCSF)
 ├── core/            # Engine, dependency graph
-├── adapters/        # Vendor adapters (Splunk, Sigma, Elastic, Sentinel)
-├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization
+├── adapters/        # Vendor adapters (Splunk, Sigma + correlations/filters, Elastic, Sentinel)
+├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI
 ├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
 └── cli/             # Typer CLI interface
@@ -195,12 +224,13 @@ odcp/
 
 ## Roadmap
 
-| Phase | Focus                                                 | Status           |
-| ----- | ----------------------------------------------------- | ---------------- |
-| 1     | Splunk static readiness analysis                      | **Complete** |
-| 2     | Splunk runtime signals and health                     | **Complete** |
-| 3     | Semantic gap analysis and optimization                | **Complete** |
-| 4     | Additional vendor adapters (Sigma, Sentinel, Elastic) | **Complete**     |
+| Phase | Focus | Status |
+| ----- | ----- | ------ |
+| 1 | Splunk static readiness analysis | **Complete** |
+| 2 | Splunk runtime signals and health | **Complete** |
+| 3 | Semantic gap analysis and optimization | **Complete** |
+| 4 | Additional vendor adapters (Sigma, Sentinel, Elastic) | **Complete** |
+| 5 | Sigma correlations/filters, STIX refresh, OCSF mapping, Splunk Cloud CI | **Complete** |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.
 
