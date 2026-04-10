@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,9 @@ app = typer.Typer(
 
 scan_app = typer.Typer(help="Scan an environment for detection readiness.")
 app.add_typer(scan_app, name="scan")
+
+soc_app = typer.Typer(help="AI SOC automation workflows.")
+app.add_typer(soc_app, name="ai-soc")
 
 console = Console()
 
@@ -1066,6 +1070,588 @@ def _print_sigma_extras(adapter, report) -> None:
             for cat, count in sorted(by_cat.items()):
                 tbl.add_row(cat, str(count))
             console.print(tbl)
+
+
+# ---------------------------------------------------------------------------
+# odcp ci <report> [--baseline <baseline_report>]
+# ---------------------------------------------------------------------------
+@app.command("ci")
+def ci_cmd(
+    report_file: Path = typer.Argument(..., help="Path to current JSON scan report."),
+    baseline: Path | None = typer.Option(
+        None, "--baseline", "-b",
+        help="Path to baseline JSON scan report for regression detection.",
+    ),
+    min_score: float = typer.Option(
+        0.0, "--min-score",
+        help="Minimum overall readiness score to pass (0.0-1.0).",
+    ),
+    max_blocked_ratio: float = typer.Option(
+        1.0, "--max-blocked-ratio",
+        help="Maximum ratio of blocked detections allowed (0.0-1.0).",
+    ),
+    fail_on_regression: bool = typer.Option(
+        True, "--fail-on-regression/--allow-regression",
+        help="Fail if any detection readiness score regresses.",
+    ),
+    fail_on_new_blocked: bool = typer.Option(
+        True, "--fail-on-new-blocked/--allow-new-blocked",
+        help="Fail if any detection becomes newly blocked.",
+    ),
+    max_critical: int = typer.Option(
+        -1, "--max-critical",
+        help="Maximum number of critical findings allowed (-1 = unlimited).",
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write CI result to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Run CI/CD gate checks on a scan report.
+
+    When --baseline is provided, compares current vs. baseline to detect
+    regressions and improvements.  Exit code 1 = policy violation.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not report_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {report_file}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.ci import CiAnalyzer, CiPolicy
+    from odcp.models import ScanReport
+
+    policy = CiPolicy(
+        min_readiness_score=min_score,
+        max_blocked_ratio=max_blocked_ratio,
+        fail_on_regression=fail_on_regression,
+        fail_on_new_blocked=fail_on_new_blocked,
+        max_critical_findings=max_critical,
+    )
+    analyzer = CiAnalyzer(policy)
+
+    current_data = json.loads(report_file.read_text(encoding="utf-8"))
+    current_report = ScanReport.model_validate(current_data)
+
+    if baseline:
+        if not baseline.exists():
+            console.print(f"[red]Error:[/red] Baseline file not found: {baseline}")
+            raise typer.Exit(code=1)
+        baseline_data = json.loads(baseline.read_text(encoding="utf-8"))
+        baseline_report = ScanReport.model_validate(baseline_data)
+        result = analyzer.compare(baseline_report, current_report)
+    else:
+        result = analyzer.analyze_single(current_report)
+
+    if output:
+        output.write_text(
+            json.dumps(result.model_dump(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]CI result written to:[/green] {output}")
+    else:
+        _print_ci_result(result)
+
+    if result.exit_code != 0:
+        raise typer.Exit(code=result.exit_code)
+
+
+# ---------------------------------------------------------------------------
+# odcp validate <path> --platform <platform>
+# ---------------------------------------------------------------------------
+@app.command("validate")
+def validate_cmd(
+    path: Path = typer.Argument(..., help="Path to detection rule directory or file."),
+    platform: str = typer.Option(
+        ..., "--platform", "-p",
+        help="Detection platform (splunk, sigma, elastic, sentinel, chronicle).",
+    ),
+    require_description: bool = typer.Option(True, "--require-description/--no-require-description"),
+    require_mitre: bool = typer.Option(False, "--require-mitre/--no-require-mitre"),
+    naming_pattern: Optional[str] = typer.Option(None, "--naming-pattern"),
+    max_query_length: int = typer.Option(0, "--max-query-length"),
+    fail_on_warnings: bool = typer.Option(False, "--fail-on-warnings/--no-fail-on-warnings"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write result to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Validate detection rules for Detection-as-Code workflows.
+
+    Checks naming conventions, required metadata, lifecycle states,
+    and file structure.  Designed for pre-commit hooks and PR checks.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {path}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.dac import DacPolicy, DacValidator
+
+    policy = DacPolicy(
+        require_description=require_description,
+        require_mitre_tags=require_mitre,
+        naming_pattern=naming_pattern,
+        max_query_length=max_query_length,
+        fail_on_warnings=fail_on_warnings,
+    )
+    validator = DacValidator(policy)
+    result = validator.validate_files(path, platform)
+
+    if output:
+        output.write_text(
+            json.dumps(result.model_dump(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Validation result written to:[/green] {output}")
+    else:
+        _print_validation_result(result)
+
+    if not result.valid:
+        raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# Print helpers for CI and validation
+# ---------------------------------------------------------------------------
+def _print_ci_result(result) -> None:
+    """Print CI/CD gate result."""
+    verdict_style = {
+        "passed": "green",
+        "failed": "red",
+        "warning": "yellow",
+    }.get(result.verdict.value, "")
+
+    overview = (
+        f"[bold]Verdict:[/bold] [{verdict_style}]{result.verdict.value.upper()}[/{verdict_style}]\n"
+        f"[bold]Detections:[/bold] {result.total_detections}\n"
+        f"[bold]Findings:[/bold] {result.total_findings} "
+        f"({result.critical_findings} critical)\n"
+        f"{result.summary}"
+    )
+    console.print(Panel(overview, title="CI/CD Gate", border_style=verdict_style or "blue"))
+
+    if result.score_changes:
+        table = Table(title="Score Changes")
+        table.add_column("Metric", style="bold")
+        table.add_column("Baseline", justify="right")
+        table.add_column("Current", justify="right")
+        table.add_column("Delta", justify="right")
+        for sc in result.score_changes:
+            delta_style = "green" if sc.delta >= 0 else "red"
+            table.add_row(
+                sc.metric,
+                f"{sc.baseline:.0%}",
+                f"{sc.current:.0%}",
+                f"[{delta_style}]{sc.delta:+.0%}[/{delta_style}]",
+            )
+        console.print(table)
+
+    if result.regressions:
+        table = Table(title=f"Regressions ({len(result.regressions)})")
+        table.add_column("Detection", style="bold")
+        table.add_column("Was", justify="right")
+        table.add_column("Now", justify="right")
+        table.add_column("Score", justify="right")
+        for r in result.regressions[:15]:
+            table.add_row(
+                r.detection_name,
+                r.baseline_status,
+                f"[red]{r.current_status}[/red]",
+                f"{r.baseline_score:.0%} -> {r.current_score:.0%}",
+            )
+        console.print(table)
+
+    if result.improvements:
+        table = Table(title=f"Improvements ({len(result.improvements)})")
+        table.add_column("Detection", style="bold")
+        table.add_column("Was", justify="right")
+        table.add_column("Now", justify="right")
+        table.add_column("Score", justify="right")
+        for imp in result.improvements[:15]:
+            table.add_row(
+                imp.detection_name,
+                imp.baseline_status,
+                f"[green]{imp.current_status}[/green]",
+                f"{imp.baseline_score:.0%} -> {imp.current_score:.0%}",
+            )
+        console.print(table)
+
+    if result.policy_violations:
+        table = Table(title="Policy Violations")
+        table.add_column("Rule", style="bold")
+        table.add_column("Severity")
+        table.add_column("Message")
+        for v in result.policy_violations:
+            sev_style = "red" if v.severity == "error" else "yellow"
+            table.add_row(
+                v.rule,
+                f"[{sev_style}]{v.severity}[/{sev_style}]",
+                v.message,
+            )
+        console.print(table)
+
+
+def _print_validation_result(result) -> None:
+    """Print Detection-as-Code validation result."""
+    valid_text = "[green]VALID[/green]" if result.valid else "[red]INVALID[/red]"
+    overview = (
+        f"[bold]Status:[/bold] {valid_text}\n"
+        f"[bold]Files:[/bold] {result.total_files}\n"
+        f"[bold]Detections:[/bold] {result.total_detections}\n"
+        f"[red]Errors:[/red] {result.errors}  "
+        f"[yellow]Warnings:[/yellow] {result.warnings}"
+    )
+    border = "green" if result.valid else "red"
+    console.print(Panel(overview, title="Detection Validation", border_style=border))
+
+    if result.lifecycle_summary:
+        table = Table(title="Lifecycle Summary")
+        table.add_column("State", style="bold")
+        table.add_column("Count", justify="right")
+        for state, count in sorted(result.lifecycle_summary.items()):
+            table.add_row(state, str(count))
+        console.print(table)
+
+    if result.issues:
+        table = Table(title=f"Issues ({len(result.issues)})")
+        table.add_column("Severity")
+        table.add_column("Rule", style="bold")
+        table.add_column("File")
+        table.add_column("Message")
+        for issue in result.issues:
+            sev_style = {
+                "error": "red",
+                "warning": "yellow",
+                "info": "dim",
+            }.get(issue.severity.value, "")
+            table.add_row(
+                f"[{sev_style}]{issue.severity.value}[/{sev_style}]",
+                issue.rule,
+                os.path.basename(issue.file),
+                issue.message[:80],
+            )
+        console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# odcp ai-soc inventory <report>
+# ---------------------------------------------------------------------------
+@soc_app.command("inventory")
+def soc_inventory_cmd(
+    report_file: Path = typer.Argument(..., help="Path to a JSON scan report."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write catalog to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Build a unified data source catalog from a scan report."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not report_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {report_file}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.ai_soc import SourceInventoryBuilder
+    from odcp.models import ScanReport
+
+    data = json.loads(report_file.read_text(encoding="utf-8"))
+    report = ScanReport.model_validate(data)
+
+    catalog = SourceInventoryBuilder().build_from_single(report)
+
+    if output:
+        output.write_text(
+            json.dumps(catalog.model_dump(mode="json"), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Source catalog written to:[/green] {output}")
+        return
+
+    _print_source_catalog(catalog)
+
+
+# ---------------------------------------------------------------------------
+# odcp ai-soc drift <baseline> <current>
+# ---------------------------------------------------------------------------
+@soc_app.command("drift")
+def soc_drift_cmd(
+    baseline_file: Path = typer.Argument(..., help="Baseline JSON scan report."),
+    current_file: Path = typer.Argument(..., help="Current JSON scan report."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write drift report to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Detect environment drift between two scan snapshots."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    for f in (baseline_file, current_file):
+        if not f.exists():
+            console.print(f"[red]Error:[/red] File not found: {f}")
+            raise typer.Exit(code=1)
+
+    from odcp.analyzers.ai_soc import DriftDetector
+    from odcp.models import ScanReport
+
+    baseline = ScanReport.model_validate(json.loads(baseline_file.read_text(encoding="utf-8")))
+    current = ScanReport.model_validate(json.loads(current_file.read_text(encoding="utf-8")))
+
+    drift = DriftDetector().compare_reports(baseline, current)
+
+    if output:
+        output.write_text(
+            json.dumps(drift.model_dump(mode="json"), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Drift report written to:[/green] {output}")
+        return
+
+    _print_drift_summary(drift)
+
+
+# ---------------------------------------------------------------------------
+# odcp ai-soc feedback <report>
+# ---------------------------------------------------------------------------
+@soc_app.command("feedback")
+def soc_feedback_cmd(
+    report_file: Path = typer.Argument(..., help="Path to a JSON scan report."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write feedback to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Analyze detection outcomes and propose tuning actions."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not report_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {report_file}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.ai_soc import FeedbackAnalyzer
+    from odcp.models import ScanReport
+
+    data = json.loads(report_file.read_text(encoding="utf-8"))
+    report = ScanReport.model_validate(data)
+
+    feedback = FeedbackAnalyzer().analyze(report)
+
+    if output:
+        output.write_text(
+            json.dumps(feedback.model_dump(mode="json"), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Feedback report written to:[/green] {output}")
+        return
+
+    _print_feedback_summary(feedback)
+
+
+# ---------------------------------------------------------------------------
+# odcp ai-soc cycle <report> [--baseline <baseline>]
+# ---------------------------------------------------------------------------
+@soc_app.command("cycle")
+def soc_cycle_cmd(
+    report_file: Path = typer.Argument(..., help="Current JSON scan report."),
+    baseline: Path | None = typer.Option(
+        None, "--baseline", "-b", help="Baseline scan report for drift detection."
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write full cycle result."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Run a full AI SOC automation cycle.
+
+    Builds source catalog, runs data-aware feasibility, detects drift
+    (if baseline provided), analyzes detection feedback, and produces
+    a prioritized action plan.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not report_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {report_file}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.ai_soc import AiSocOrchestrator
+    from odcp.models import ScanReport
+
+    current = ScanReport.model_validate(json.loads(report_file.read_text(encoding="utf-8")))
+    baseline_report = None
+    if baseline:
+        if not baseline.exists():
+            console.print(f"[red]Error:[/red] Baseline file not found: {baseline}")
+            raise typer.Exit(code=1)
+        baseline_report = ScanReport.model_validate(
+            json.loads(baseline.read_text(encoding="utf-8"))
+        )
+
+    with console.status("[bold blue]Running AI SOC cycle..."):
+        result = AiSocOrchestrator().run_cycle(current, baseline_report)
+
+    if output:
+        output.write_text(
+            json.dumps(result.model_dump(mode="json"), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]AI SOC cycle result written to:[/green] {output}")
+        return
+
+    _print_cycle_result(result)
+
+
+# ---------------------------------------------------------------------------
+# AI SOC print helpers
+# ---------------------------------------------------------------------------
+def _print_source_catalog(catalog) -> None:
+    """Print unified source catalog."""
+    overview = (
+        f"[bold]Total sources:[/bold] {catalog.total_sources}\n"
+        f"[bold]Platforms:[/bold] {', '.join(catalog.platforms_represented)}\n"
+        f"[green]Healthy:[/green] {catalog.healthy_sources}  "
+        f"[yellow]Degraded:[/yellow] {catalog.degraded_sources}  "
+        f"[red]Unavailable:[/red] {catalog.unavailable_sources}"
+    )
+    console.print(Panel(overview, title="Source Catalog", border_style="cyan"))
+
+    if catalog.sources:
+        table = Table(title="Data Sources")
+        table.add_column("Name", style="bold")
+        table.add_column("Platform")
+        table.add_column("Type")
+        table.add_column("Observed")
+        table.add_column("Detections", justify="right")
+        table.add_column("Fields", justify="right")
+        table.add_column("ATT&CK Sources", justify="right")
+        for src in sorted(catalog.sources, key=lambda s: (-s.detection_count, s.name))[:25]:
+            obs = "[green]yes[/green]" if src.observed else "[red]no[/red]"
+            table.add_row(
+                src.name,
+                src.platform,
+                src.source_type,
+                obs,
+                str(src.detection_count),
+                str(len(src.fields)),
+                str(len(src.attack_data_sources)),
+            )
+        console.print(table)
+
+    if catalog.attack_data_source_coverage:
+        table = Table(title="ATT&CK Data Source Coverage")
+        table.add_column("Data Source", style="bold")
+        table.add_column("Sources", justify="right")
+        for ds, count in sorted(catalog.attack_data_source_coverage.items(), key=lambda x: -x[1]):
+            table.add_row(ds, str(count))
+        console.print(table)
+
+
+def _print_drift_summary(drift) -> None:
+    """Print environment drift summary."""
+    risk_style = "green" if drift.risk_score < 0.3 else ("yellow" if drift.risk_score < 0.7 else "red")
+    overview = (
+        f"[bold]Risk score:[/bold] [{risk_style}]{drift.risk_score:.0%}[/{risk_style}]\n"
+        f"[bold]Total events:[/bold] {drift.total_drift_events}\n"
+        f"[green]Added:[/green] {drift.sources_added}  "
+        f"[red]Removed:[/red] {drift.sources_removed}  "
+        f"[yellow]Health changes:[/yellow] {drift.health_changes}"
+    )
+    console.print(Panel(overview, title="Environment Drift", border_style=risk_style))
+
+    if drift.events:
+        table = Table(title="Drift Events")
+        table.add_column("Type", style="bold")
+        table.add_column("Source")
+        table.add_column("Platform")
+        table.add_column("Severity")
+        table.add_column("Description")
+        for evt in drift.events[:20]:
+            sev_style = {"critical": "red", "warning": "yellow", "info": "dim"}.get(evt.severity, "")
+            table.add_row(
+                evt.event_type,
+                evt.source_name,
+                evt.platform,
+                f"[{sev_style}]{evt.severity}[/{sev_style}]" if sev_style else evt.severity,
+                evt.description[:70],
+            )
+        console.print(table)
+
+    if drift.recommendations:
+        console.print("\n[bold]Recommendations:[/bold]")
+        for rec in drift.recommendations:
+            console.print(f"  [dim]-[/dim] {rec}")
+
+
+def _print_feedback_summary(feedback) -> None:
+    """Print detection feedback analysis."""
+    overview = (
+        f"[bold]Analyzed:[/bold] {feedback.total_detections_analyzed}\n"
+        f"[green]Healthy:[/green] {feedback.healthy_detections}  "
+        f"[yellow]Noisy:[/yellow] {feedback.noisy_detections}  "
+        f"[red]Stale:[/red] {feedback.stale_detections}\n"
+        f"[bold]Tuning proposals:[/bold] {len(feedback.proposals)}"
+    )
+    console.print(Panel(overview, title="Detection Feedback", border_style="magenta"))
+
+    if feedback.proposals:
+        table = Table(title="Tuning Proposals")
+        table.add_column("Detection", style="bold")
+        table.add_column("Action")
+        table.add_column("Priority")
+        table.add_column("Rationale")
+        for p in feedback.proposals[:15]:
+            pstyle = {"high": "red", "medium": "yellow", "low": "dim"}.get(p.priority, "")
+            table.add_row(
+                p.detection_name,
+                p.proposal_type,
+                f"[{pstyle}]{p.priority}[/{pstyle}]" if pstyle else p.priority,
+                p.rationale[:60],
+            )
+        console.print(table)
+
+    if feedback.recommendations:
+        console.print("\n[bold]Recommendations:[/bold]")
+        for rec in feedback.recommendations:
+            console.print(f"  [dim]-[/dim] {rec}")
+
+
+def _print_cycle_result(result) -> None:
+    """Print full AI SOC cycle result."""
+    overview = (
+        f"[bold]Environment:[/bold] {result.environment_name}\n"
+        f"[bold]Readiness:[/bold] {result.readiness_score:.0%}\n"
+        f"[green]Detectable now:[/green] {result.detectable_now}  "
+        f"[yellow]Blocked (data):[/yellow] {result.blocked_by_data}  "
+        f"[red]Blocked (logic):[/red] {result.blocked_by_logic}\n"
+        f"[bold]Coverage score:[/bold] {result.coverage_score:.0%}  "
+        f"[bold]ATT&CK techniques:[/bold] {result.threat_intel_techniques}"
+    )
+    console.print(Panel(overview, title="AI SOC Cycle", border_style="cyan"))
+
+    if result.source_catalog:
+        console.print(
+            f"\n[bold]Source catalog:[/bold] {result.source_catalog.total_sources} sources "
+            f"across {', '.join(result.source_catalog.platforms_represented)}"
+        )
+
+    if result.drift_summary:
+        _print_drift_summary(result.drift_summary)
+
+    if result.feedback_summary:
+        _print_feedback_summary(result.feedback_summary)
+
+    if result.priority_actions:
+        console.print(Panel(
+            "\n".join(result.priority_actions),
+            title="Priority Actions",
+            border_style="red",
+        ))
 
 
 if __name__ == "__main__":
