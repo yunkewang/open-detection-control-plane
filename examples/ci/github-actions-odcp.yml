@@ -1,0 +1,110 @@
+# Example GitHub Actions workflow for ODCP CI/CD integration.
+#
+# This workflow validates detection rules on every pull request that
+# touches detection files.  It supports two modes:
+#
+# 1. Single-report mode: scans the current branch and checks policy.
+# 2. Baseline comparison: compares current vs. main branch to catch
+#    regressions (new blocked detections, score drops).
+#
+# Customize the paths, platform, and policy flags to match your repo.
+
+name: Detection Readiness CI
+
+on:
+  pull_request:
+    paths:
+      - "detections/**"
+      - "sigma_rules/**"
+      - "elastic_rules/**"
+      - "sentinel_rules/**"
+      - "chronicle_rules/**"
+      - "splunk_app/**"
+
+jobs:
+  validate:
+    name: Validate Detection Rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ODCP
+        run: pip install odcp
+
+      # ---- Detection-as-Code validation ----
+      # Checks naming conventions, required metadata, file structure.
+      - name: Validate Sigma rules
+        run: |
+          odcp validate sigma_rules/ \
+            --platform sigma \
+            --require-description \
+            --require-mitre
+
+      # ---- Scan & CI gate (single report) ----
+      - name: Scan current rules
+        run: |
+          odcp scan sigma sigma_rules/ \
+            --output current-report.json \
+            --format json
+
+      - name: Run CI gate
+        run: |
+          odcp ci current-report.json \
+            --min-score 0.5 \
+            --max-blocked-ratio 0.3 \
+            --max-critical 0
+
+  regression:
+    name: Regression Detection
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ODCP
+        run: pip install odcp
+
+      # Scan current branch
+      - name: Scan current branch
+        run: |
+          odcp scan sigma sigma_rules/ \
+            --output current-report.json \
+            --format json
+
+      # Scan baseline (main branch)
+      - name: Checkout baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+
+      - name: Scan baseline
+        run: |
+          odcp scan sigma baseline/sigma_rules/ \
+            --output baseline-report.json \
+            --format json
+
+      # Compare
+      - name: Compare baseline vs. current
+        run: |
+          odcp ci current-report.json \
+            --baseline baseline-report.json \
+            --fail-on-regression \
+            --fail-on-new-blocked
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odcp-reports
+          path: |
+            current-report.json
+            baseline-report.json

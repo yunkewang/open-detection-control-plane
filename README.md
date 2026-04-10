@@ -21,9 +21,9 @@ ODCP provides a **unified control plane** that models environments, detections, 
 
 | Layer | Components |
 |-------|------------|
-| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph`, `odcp cross-platform`, `odcp migrate` |
+| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph`, `odcp cross-platform`, `odcp migrate`, **`odcp ci`**, **`odcp validate`** |
 | **Reporting** | JSON, Markdown, HTML |
-| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI**, **Cross-Platform Readiness**, **Migration Analysis** |
+| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI**, **Cross-Platform Readiness**, **Migration Analysis**, **CI/CD Gate**, **DaC Validator** |
 | **Core Engine** | Dependency Graph, Scoring, Findings, **STIX Refresh** |
 | **Adapters** | Splunk (static + runtime), Sigma **(+ correlations/filters)**, Elastic, Sentinel, **Chronicle (YARA-L)** |
 | **Collectors** | Local, Splunk REST API, *(Future: Remote)* |
@@ -78,6 +78,13 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **Unified cross-platform readiness** — Aggregates scan reports from multiple platforms into a single view with per-platform readiness scores, shared/unique MITRE technique analysis, and actionable recommendations
 - **Detection migration analysis** — Evaluates feasibility and effort of migrating detections between any two platforms (Splunk, Sigma, Elastic, Sentinel, Chronicle); maps platform-specific features, identifies blockers, estimates effort in hours, and classifies complexity (trivial/low/medium/high/infeasible)
 - **CLI commands** — `odcp scan chronicle`, `odcp cross-platform`, `odcp migrate`
+
+**Phase 7 — CI/CD Integration and Detection-as-Code:**
+- **CI/CD gate analyzer** — Compares baseline vs. current scan reports to detect regressions, score drops, and newly blocked detections; enforces configurable policy thresholds (min readiness score, max blocked ratio, critical findings cap) with pass/fail/warning verdicts and exit codes for pipeline gating
+- **Detection-as-Code validator** — Validates detection files for structural correctness, naming conventions, required metadata (description, MITRE tags, severity), lifecycle state enforcement, and query sanity; supports all platforms (Splunk, Sigma, Elastic, Sentinel, Chronicle)
+- **GitHub Actions workflow template** — Example CI workflow for PR-based detection validation with baseline regression comparison
+- **Pre-commit hook** — Shell script for local validation before commits
+- **CLI commands** — `odcp ci`, `odcp validate`
 
 ### Future
 
@@ -253,6 +260,39 @@ odcp report report.json --format markdown --output report.md
 odcp graph report.json
 ```
 
+### CI/CD gate checks
+
+```bash
+# Single report — check against policy thresholds
+odcp ci report.json --min-score 0.5 --max-blocked-ratio 0.3 --max-critical 0
+
+# Baseline comparison — detect regressions between two scans
+odcp ci current.json --baseline baseline.json --fail-on-regression --fail-on-new-blocked
+
+# Allow regressions (warning only)
+odcp ci current.json --baseline baseline.json --allow-regression
+
+# Write CI result to file
+odcp ci report.json --output ci-result.json
+```
+
+### Detection-as-Code validation
+
+```bash
+# Validate Sigma rules for required metadata
+odcp validate sigma_rules/ --platform sigma --require-description
+
+# Require MITRE ATT&CK tags and enforce naming convention
+odcp validate sigma_rules/ --platform sigma --require-mitre --naming-pattern '^[a-z][a-z0-9_]+$'
+
+# Validate any platform
+odcp validate elastic_rules/ --platform elastic
+odcp validate chronicle_rules/ --platform chronicle
+
+# Fail on warnings (strict mode for CI)
+odcp validate sigma_rules/ --platform sigma --fail-on-warnings --output validation.json
+```
+
 ### Build an AI SOC prototype plan from a scan report
 
 ```bash
@@ -290,7 +330,7 @@ odcp/
 ├── models/          # Pydantic data models (detection, dependency, coverage, correlation, OCSF, cross-platform, migration)
 ├── core/            # Engine, dependency graph
 ├── adapters/        # Vendor adapters (Splunk, Sigma + correlations/filters, Elastic, Sentinel, Chronicle)
-├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI, cross-platform, migration
+├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI, cross-platform, migration, CI/CD gate, DaC validator
 ├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
 └── cli/             # Typer CLI interface
@@ -306,6 +346,7 @@ odcp/
 | 4 | Additional vendor adapters (Sigma, Sentinel, Elastic) | **Complete** |
 | 5 | Sigma correlations/filters, STIX refresh, OCSF mapping, Splunk Cloud CI | **Complete** |
 | 6 | Chronicle YARA-L adapter, cross-platform readiness, migration analysis | **Complete** |
+| 7 | CI/CD integration and Detection-as-Code workflow support | **Complete** |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.
 

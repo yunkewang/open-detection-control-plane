@@ -150,9 +150,31 @@
 
 ### Future Items
 
-- Chronicle (Google) YARA-L adapter
-- Unified cross-platform readiness view
-- Detection migration analysis (e.g., Splunk → Sentinel feasibility)
+- ✅ Chronicle (Google) YARA-L adapter
+- ✅ Unified cross-platform readiness view
+- ✅ Detection migration analysis (e.g., Splunk → Sentinel feasibility)
+- ✅ CI/CD integration (validate detections in PRs)
+- ✅ Detection-as-code workflow support
 - Web dashboard UI
-- CI/CD integration (validate detections in PRs)
-- Detection-as-code workflow support
+
+---
+
+## Phase 7: CI/CD Integration and Detection-as-Code — Complete
+
+**Goal:** Enable automated validation of detection content in CI/CD pipelines and support Detection-as-Code workflows.
+
+### Delivered
+
+- **CI/CD gate analyzer** (`odcp/analyzers/ci.py`) — Compares baseline vs. current scan reports to detect regressions, score drops, and newly blocked detections; enforces configurable policy thresholds (minimum readiness score, maximum blocked ratio, critical/high findings cap); produces pass/fail/warning verdicts with non-zero exit codes for pipeline gating
+- **Detection-as-Code validator** (`odcp/analyzers/dac.py`) — Validates detection rule files for structural correctness, naming conventions (regex patterns), required metadata (description, severity, MITRE ATT&CK tags), lifecycle state enforcement (draft/review/testing/production/deprecated), query sanity checks, and file structure validation; supports all five platforms (Splunk, Sigma, Elastic, Sentinel, Chronicle)
+- **GitHub Actions workflow template** (`examples/ci/github-actions-odcp.yml`) — Example CI workflow for PR-based detection validation with two jobs: single-report policy check and baseline regression comparison
+- **Pre-commit hook** (`examples/ci/pre-commit-hook.sh`) — Shell script for local validation before commits, auto-detects changed detection directories
+- CLI commands: `odcp ci`, `odcp validate`
+- Unit and integration tests for all Phase 7 components (391 tests total)
+
+### CLI Additions
+
+- `odcp ci <report> [--baseline <baseline>]` — CI/CD gate check with configurable policy
+- `odcp ci <report> --min-score 0.5 --max-blocked-ratio 0.3 --max-critical 0`
+- `odcp validate <path> --platform <platform>` — Detection-as-Code validation
+- `odcp validate <path> --platform sigma --require-mitre --naming-pattern '^[a-z_]+$'`

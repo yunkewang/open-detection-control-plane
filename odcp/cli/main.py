@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -1066,6 +1067,271 @@ def _print_sigma_extras(adapter, report) -> None:
             for cat, count in sorted(by_cat.items()):
                 tbl.add_row(cat, str(count))
             console.print(tbl)
+
+
+# ---------------------------------------------------------------------------
+# odcp ci <report> [--baseline <baseline_report>]
+# ---------------------------------------------------------------------------
+@app.command("ci")
+def ci_cmd(
+    report_file: Path = typer.Argument(..., help="Path to current JSON scan report."),
+    baseline: Path | None = typer.Option(
+        None, "--baseline", "-b",
+        help="Path to baseline JSON scan report for regression detection.",
+    ),
+    min_score: float = typer.Option(
+        0.0, "--min-score",
+        help="Minimum overall readiness score to pass (0.0-1.0).",
+    ),
+    max_blocked_ratio: float = typer.Option(
+        1.0, "--max-blocked-ratio",
+        help="Maximum ratio of blocked detections allowed (0.0-1.0).",
+    ),
+    fail_on_regression: bool = typer.Option(
+        True, "--fail-on-regression/--allow-regression",
+        help="Fail if any detection readiness score regresses.",
+    ),
+    fail_on_new_blocked: bool = typer.Option(
+        True, "--fail-on-new-blocked/--allow-new-blocked",
+        help="Fail if any detection becomes newly blocked.",
+    ),
+    max_critical: int = typer.Option(
+        -1, "--max-critical",
+        help="Maximum number of critical findings allowed (-1 = unlimited).",
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write CI result to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Run CI/CD gate checks on a scan report.
+
+    When --baseline is provided, compares current vs. baseline to detect
+    regressions and improvements.  Exit code 1 = policy violation.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not report_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {report_file}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.ci import CiAnalyzer, CiPolicy
+    from odcp.models import ScanReport
+
+    policy = CiPolicy(
+        min_readiness_score=min_score,
+        max_blocked_ratio=max_blocked_ratio,
+        fail_on_regression=fail_on_regression,
+        fail_on_new_blocked=fail_on_new_blocked,
+        max_critical_findings=max_critical,
+    )
+    analyzer = CiAnalyzer(policy)
+
+    current_data = json.loads(report_file.read_text(encoding="utf-8"))
+    current_report = ScanReport.model_validate(current_data)
+
+    if baseline:
+        if not baseline.exists():
+            console.print(f"[red]Error:[/red] Baseline file not found: {baseline}")
+            raise typer.Exit(code=1)
+        baseline_data = json.loads(baseline.read_text(encoding="utf-8"))
+        baseline_report = ScanReport.model_validate(baseline_data)
+        result = analyzer.compare(baseline_report, current_report)
+    else:
+        result = analyzer.analyze_single(current_report)
+
+    if output:
+        output.write_text(
+            json.dumps(result.model_dump(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]CI result written to:[/green] {output}")
+    else:
+        _print_ci_result(result)
+
+    if result.exit_code != 0:
+        raise typer.Exit(code=result.exit_code)
+
+
+# ---------------------------------------------------------------------------
+# odcp validate <path> --platform <platform>
+# ---------------------------------------------------------------------------
+@app.command("validate")
+def validate_cmd(
+    path: Path = typer.Argument(..., help="Path to detection rule directory or file."),
+    platform: str = typer.Option(
+        ..., "--platform", "-p",
+        help="Detection platform (splunk, sigma, elastic, sentinel, chronicle).",
+    ),
+    require_description: bool = typer.Option(True, "--require-description/--no-require-description"),
+    require_mitre: bool = typer.Option(False, "--require-mitre/--no-require-mitre"),
+    naming_pattern: Optional[str] = typer.Option(None, "--naming-pattern"),
+    max_query_length: int = typer.Option(0, "--max-query-length"),
+    fail_on_warnings: bool = typer.Option(False, "--fail-on-warnings/--no-fail-on-warnings"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write result to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Validate detection rules for Detection-as-Code workflows.
+
+    Checks naming conventions, required metadata, lifecycle states,
+    and file structure.  Designed for pre-commit hooks and PR checks.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {path}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.dac import DacPolicy, DacValidator
+
+    policy = DacPolicy(
+        require_description=require_description,
+        require_mitre_tags=require_mitre,
+        naming_pattern=naming_pattern,
+        max_query_length=max_query_length,
+        fail_on_warnings=fail_on_warnings,
+    )
+    validator = DacValidator(policy)
+    result = validator.validate_files(path, platform)
+
+    if output:
+        output.write_text(
+            json.dumps(result.model_dump(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Validation result written to:[/green] {output}")
+    else:
+        _print_validation_result(result)
+
+    if not result.valid:
+        raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# Print helpers for CI and validation
+# ---------------------------------------------------------------------------
+def _print_ci_result(result) -> None:
+    """Print CI/CD gate result."""
+    verdict_style = {
+        "passed": "green",
+        "failed": "red",
+        "warning": "yellow",
+    }.get(result.verdict.value, "")
+
+    overview = (
+        f"[bold]Verdict:[/bold] [{verdict_style}]{result.verdict.value.upper()}[/{verdict_style}]\n"
+        f"[bold]Detections:[/bold] {result.total_detections}\n"
+        f"[bold]Findings:[/bold] {result.total_findings} "
+        f"({result.critical_findings} critical)\n"
+        f"{result.summary}"
+    )
+    console.print(Panel(overview, title="CI/CD Gate", border_style=verdict_style or "blue"))
+
+    if result.score_changes:
+        table = Table(title="Score Changes")
+        table.add_column("Metric", style="bold")
+        table.add_column("Baseline", justify="right")
+        table.add_column("Current", justify="right")
+        table.add_column("Delta", justify="right")
+        for sc in result.score_changes:
+            delta_style = "green" if sc.delta >= 0 else "red"
+            table.add_row(
+                sc.metric,
+                f"{sc.baseline:.0%}",
+                f"{sc.current:.0%}",
+                f"[{delta_style}]{sc.delta:+.0%}[/{delta_style}]",
+            )
+        console.print(table)
+
+    if result.regressions:
+        table = Table(title=f"Regressions ({len(result.regressions)})")
+        table.add_column("Detection", style="bold")
+        table.add_column("Was", justify="right")
+        table.add_column("Now", justify="right")
+        table.add_column("Score", justify="right")
+        for r in result.regressions[:15]:
+            table.add_row(
+                r.detection_name,
+                r.baseline_status,
+                f"[red]{r.current_status}[/red]",
+                f"{r.baseline_score:.0%} -> {r.current_score:.0%}",
+            )
+        console.print(table)
+
+    if result.improvements:
+        table = Table(title=f"Improvements ({len(result.improvements)})")
+        table.add_column("Detection", style="bold")
+        table.add_column("Was", justify="right")
+        table.add_column("Now", justify="right")
+        table.add_column("Score", justify="right")
+        for imp in result.improvements[:15]:
+            table.add_row(
+                imp.detection_name,
+                imp.baseline_status,
+                f"[green]{imp.current_status}[/green]",
+                f"{imp.baseline_score:.0%} -> {imp.current_score:.0%}",
+            )
+        console.print(table)
+
+    if result.policy_violations:
+        table = Table(title="Policy Violations")
+        table.add_column("Rule", style="bold")
+        table.add_column("Severity")
+        table.add_column("Message")
+        for v in result.policy_violations:
+            sev_style = "red" if v.severity == "error" else "yellow"
+            table.add_row(
+                v.rule,
+                f"[{sev_style}]{v.severity}[/{sev_style}]",
+                v.message,
+            )
+        console.print(table)
+
+
+def _print_validation_result(result) -> None:
+    """Print Detection-as-Code validation result."""
+    valid_text = "[green]VALID[/green]" if result.valid else "[red]INVALID[/red]"
+    overview = (
+        f"[bold]Status:[/bold] {valid_text}\n"
+        f"[bold]Files:[/bold] {result.total_files}\n"
+        f"[bold]Detections:[/bold] {result.total_detections}\n"
+        f"[red]Errors:[/red] {result.errors}  "
+        f"[yellow]Warnings:[/yellow] {result.warnings}"
+    )
+    border = "green" if result.valid else "red"
+    console.print(Panel(overview, title="Detection Validation", border_style=border))
+
+    if result.lifecycle_summary:
+        table = Table(title="Lifecycle Summary")
+        table.add_column("State", style="bold")
+        table.add_column("Count", justify="right")
+        for state, count in sorted(result.lifecycle_summary.items()):
+            table.add_row(state, str(count))
+        console.print(table)
+
+    if result.issues:
+        table = Table(title=f"Issues ({len(result.issues)})")
+        table.add_column("Severity")
+        table.add_column("Rule", style="bold")
+        table.add_column("File")
+        table.add_column("Message")
+        for issue in result.issues:
+            sev_style = {
+                "error": "red",
+                "warning": "yellow",
+                "info": "dim",
+            }.get(issue.severity.value, "")
+            table.add_row(
+                f"[{sev_style}]{issue.severity.value}[/{sev_style}]",
+                issue.rule,
+                os.path.basename(issue.file),
+                issue.message[:80],
+            )
+        console.print(table)
 
 
 if __name__ == "__main__":
