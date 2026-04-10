@@ -83,6 +83,44 @@ ODCP provides a **unified control plane** that models environments, detections, 
 
 - Web dashboard UI
 
+## AI SOC Prototype Roadmap (Environment-Aware + Data-Aware)
+
+This roadmap is focused on turning ODCP into an **AI SOC prototype loop** that can:
+1) understand the environment,
+2) reason over available data sources,
+3) make data-aware detection decisions,
+4) continuously ingest threat intel,
+5) auto-update and validate detections.
+
+### Phase A — Environment Awareness Baseline (in progress)
+- Normalize and maintain a living **data source catalog** (indexes, sourcetypes, data models, connectors).
+- Record what each source provides (event type, field richness, ATT&CK relevance).
+- Track source health/availability as a first-class signal.
+
+### Phase B — Data-Aware Detection Feasibility (in progress)
+- Add per-detection **data support decisions**:
+  - `detectable`
+  - `blocked_data_gap`
+  - `blocked_logic_gap`
+  - `unknown`
+- Require data support checks during detection generation/migration so we avoid producing content that cannot run.
+
+### Phase C — Continuous AI SOC Automation Loop (next)
+- Schedule recurring environment scans and runtime checks.
+- Pull latest ATT&CK/STIX threat intel and map to onboarded data sources.
+- Auto-prioritize detection updates based on drift (new TTPs, broken sources, runtime failures).
+- Validate outcomes with post-deploy health checks (execution failures, volume anomalies, noisy detections).
+
+### Immediate next action items
+1. Wire real connector telemetry inventories from each adapter (Splunk/Elastic/Sentinel/Chronicle) into a unified source capability model.
+2. Expand data capability mapping to include key fields/entities each source can satisfy.
+3. Add data-aware gating into migration recommendations and generated detection content.
+4. Add scheduled jobs (or CI workflow) for:
+   - environment rescan,
+   - threat intel refresh,
+   - detection regression review.
+5. Add a feedback loop that reads detection outcomes and automatically proposes tuning updates.
+
 ## Installation
 
 ```bash
@@ -213,6 +251,13 @@ odcp report report.json --format markdown --output report.md
 
 ```bash
 odcp graph report.json
+```
+
+### Build an AI SOC prototype plan from a scan report
+
+```bash
+odcp ai-soc-prototype report.json
+odcp ai-soc-prototype report.json --output ai_soc_plan.json
 ```
 
 ### Example output

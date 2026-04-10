@@ -241,6 +241,56 @@ def graph_cmd(
 
 
 # ---------------------------------------------------------------------------
+# odcp ai-soc-prototype <input_json>
+# ---------------------------------------------------------------------------
+@app.command("ai-soc-prototype")
+def ai_soc_prototype_cmd(
+    input_file: Path = typer.Argument(..., help="Path to a JSON scan report."),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Write prototype plan to file."
+    ),
+) -> None:
+    """Build an environment-aware AI SOC prototype plan from a scan report."""
+    from odcp.analyzers.ai_soc import AiSocPrototypeAnalyzer
+    from odcp.models import ScanReport
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {input_file}")
+        raise typer.Exit(code=1)
+
+    data = json.loads(input_file.read_text(encoding="utf-8"))
+    report = ScanReport.model_validate(data)
+    summary = AiSocPrototypeAnalyzer().analyze(report)
+
+    if output:
+        output.write_text(
+            json.dumps(summary.model_dump(mode="json"), indent=2),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Prototype plan written to:[/green] {output}")
+        return
+
+    panel = (
+        f"[bold]Environment:[/bold] {summary.environment_name}\n"
+        f"[bold]Detections:[/bold] {summary.total_detections}\n"
+        f"[green]Detectable now:[/green] {summary.detectable_now}\n"
+        f"[yellow]Blocked by data:[/yellow] {summary.blocked_by_data}\n"
+        f"[red]Blocked by logic:[/red] {summary.blocked_by_logic}\n"
+        f"[dim]Unknown:[/dim] {summary.unknown}"
+    )
+    console.print(Panel(panel, title="AI SOC Prototype", border_style="cyan"))
+
+    if summary.next_actions:
+        actions = Table(title="Next Action Items")
+        actions.add_column("Phase", style="bold")
+        actions.add_column("Priority")
+        actions.add_column("Action")
+        for item in summary.next_actions:
+            actions.add_row(item.phase, item.priority, item.action)
+        console.print(actions)
+
+
+# ---------------------------------------------------------------------------
 # odcp version
 # ---------------------------------------------------------------------------
 @app.command("version")

@@ -1,5 +1,11 @@
 """ODCP data models."""
 
+from odcp.models.ai_soc import (
+    AiSocPrototypeSummary,
+    AutomationActionItem,
+    DataSourceCapability,
+    DetectionDataDecision,
+)
 from odcp.models.correlation import CorrelationRule, CorrelationType, SigmaFilter
 from odcp.models.coverage import (
     CoverageSummary,
@@ -50,6 +56,10 @@ from odcp.models.runtime import (
 from odcp.models.scoring import ReadinessScore, ReadinessStatus
 
 __all__ = [
+    "DetectionDataDecision",
+    "DataSourceCapability",
+    "AutomationActionItem",
+    "AiSocPrototypeSummary",
     "CombinedReadinessScore",
     "CorrelationRule",
     "CorrelationType",
