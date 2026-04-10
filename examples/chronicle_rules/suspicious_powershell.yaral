@@ -1,0 +1,24 @@
+rule suspicious_powershell_encoded_command {
+
+  meta:
+    author = "ODCP Example"
+    description = "Detects PowerShell execution with encoded command arguments"
+    severity = "high"
+    mitre_attack_tactic = "Execution"
+    mitre_attack_technique = "T1059.001"
+    status = "active"
+
+  events:
+    $process.metadata.event_type = "PROCESS_LAUNCH"
+    $process.principal.process.command_line = /.*powershell.*-enc.*/i
+    $process.target.process.file.full_path = /.*powershell\.exe/i
+
+  match:
+    $process over 5m
+
+  outcome:
+    $risk_score = max(85)
+
+  condition:
+    $process
+}

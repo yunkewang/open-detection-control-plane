@@ -1,0 +1,25 @@
+rule brute_force_login_attempts {
+
+  meta:
+    author = "ODCP Example"
+    description = "Detects multiple failed login attempts from a single IP indicating brute force"
+    severity = "medium"
+    mitre_attack_tactic = "Credential Access"
+    mitre_attack_technique = "T1110"
+    status = "active"
+
+  events:
+    $login.metadata.event_type = "USER_LOGIN"
+    $login.security_result.action = "BLOCK"
+    $login.principal.ip = $ip
+
+  match:
+    $ip over 10m
+
+  outcome:
+    $failed_count = count_distinct($login.metadata.id)
+    $risk_score = max(65)
+
+  condition:
+    $login and $failed_count > 10
+}

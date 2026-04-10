@@ -1,0 +1,25 @@
+rule dns_data_exfiltration {
+
+  meta:
+    author = "ODCP Example"
+    description = "Detects potential data exfiltration via DNS by identifying unusually long DNS queries"
+    severity = "high"
+    mitre_attack_tactic = "Exfiltration"
+    mitre_attack_technique = "T1048.003"
+    status = "active"
+
+  events:
+    $dns.metadata.event_type = "NETWORK_DNS"
+    $dns.network.dns.questions.name = $query
+    $dns.principal.hostname = $hostname
+
+  match:
+    $hostname over 15m
+
+  outcome:
+    $unique_queries = count_distinct($query)
+    $risk_score = max(75)
+
+  condition:
+    $dns and $unique_queries > 50
+}
