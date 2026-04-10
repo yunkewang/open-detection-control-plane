@@ -21,13 +21,14 @@ ODCP provides a **unified control plane** that models environments, detections, 
 
 | Layer | Components |
 |-------|------------|
-| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph`, `odcp cross-platform`, `odcp migrate`, **`odcp ci`**, **`odcp validate`** |
+| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph`, `odcp cross-platform`, `odcp migrate`, **`odcp ci`**, **`odcp validate`**, **`odcp ai-soc`** |
 | **Reporting** | JSON, Markdown, HTML |
-| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI**, **Cross-Platform Readiness**, **Migration Analysis**, **CI/CD Gate**, **DaC Validator** |
+| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI**, **Cross-Platform Readiness**, **Migration Analysis**, **CI/CD Gate**, **DaC Validator**, **AI SOC Orchestrator** |
+| **AI SOC Loop** | **Source Inventory**, **Drift Detector**, **Feedback Analyzer**, **Data-Aware Migration Gate** |
 | **Core Engine** | Dependency Graph, Scoring, Findings, **STIX Refresh** |
 | **Adapters** | Splunk (static + runtime), Sigma **(+ correlations/filters)**, Elastic, Sentinel, **Chronicle (YARA-L)** |
 | **Collectors** | Local, Splunk REST API, *(Future: Remote)* |
-| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, **CorrelationRule**, **SigmaFilter**, **OcsfMapping**, **CrossPlatformSummary**, **MigrationSummary**, ScanReport |
+| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, **CorrelationRule**, **SigmaFilter**, **OcsfMapping**, **CrossPlatformSummary**, **MigrationSummary**, **SourceCatalog**, **DriftSummary**, **FeedbackSummary**, **AiSocCycleResult**, ScanReport |
 
 ## Current MVP (v0.1.0)
 
@@ -86,47 +87,17 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **Pre-commit hook** — Shell script for local validation before commits
 - **CLI commands** — `odcp ci`, `odcp validate`
 
+**Phase 8 — AI SOC Automation Loop:**
+- **Unified source catalog** — Extracts data sources from all 5 platform adapters into a vendor-neutral catalog with ATT&CK data source enrichment, field extraction, and health inference
+- **Environment drift detection** — Compares catalog snapshots to detect source additions/removals, health changes, and field changes with severity classification and risk scoring
+- **Detection feedback analyzer** — Analyzes detection outcomes to identify noisy, stale, and degraded detections; proposes tuning actions (disable, adjust threshold, update query, escalate severity)
+- **Data-aware migration gate** — Cross-references target catalog against mapped features to add `data_availability` blockers; provides pre-creation feasibility checks
+- **AI SOC cycle orchestrator** — Chains all components into a single automation cycle with priority action generation
+- **CLI commands** — `odcp ai-soc inventory`, `odcp ai-soc drift`, `odcp ai-soc feedback`, `odcp ai-soc cycle`
+
 ### Future
 
 - Web dashboard UI
-
-## AI SOC Prototype Roadmap (Environment-Aware + Data-Aware)
-
-This roadmap is focused on turning ODCP into an **AI SOC prototype loop** that can:
-1) understand the environment,
-2) reason over available data sources,
-3) make data-aware detection decisions,
-4) continuously ingest threat intel,
-5) auto-update and validate detections.
-
-### Phase A — Environment Awareness Baseline (in progress)
-- Normalize and maintain a living **data source catalog** (indexes, sourcetypes, data models, connectors).
-- Record what each source provides (event type, field richness, ATT&CK relevance).
-- Track source health/availability as a first-class signal.
-
-### Phase B — Data-Aware Detection Feasibility (in progress)
-- Add per-detection **data support decisions**:
-  - `detectable`
-  - `blocked_data_gap`
-  - `blocked_logic_gap`
-  - `unknown`
-- Require data support checks during detection generation/migration so we avoid producing content that cannot run.
-
-### Phase C — Continuous AI SOC Automation Loop (next)
-- Schedule recurring environment scans and runtime checks.
-- Pull latest ATT&CK/STIX threat intel and map to onboarded data sources.
-- Auto-prioritize detection updates based on drift (new TTPs, broken sources, runtime failures).
-- Validate outcomes with post-deploy health checks (execution failures, volume anomalies, noisy detections).
-
-### Immediate next action items
-1. Wire real connector telemetry inventories from each adapter (Splunk/Elastic/Sentinel/Chronicle) into a unified source capability model.
-2. Expand data capability mapping to include key fields/entities each source can satisfy.
-3. Add data-aware gating into migration recommendations and generated detection content.
-4. Add scheduled jobs (or CI workflow) for:
-   - environment rescan,
-   - threat intel refresh,
-   - detection regression review.
-5. Add a feedback loop that reads detection outcomes and automatically proposes tuning updates.
 
 ## Installation
 
@@ -300,6 +271,27 @@ odcp ai-soc-prototype report.json
 odcp ai-soc-prototype report.json --output ai_soc_plan.json
 ```
 
+### AI SOC automation workflows
+
+```bash
+# Build unified source catalog from a scan report
+odcp ai-soc inventory report.json
+odcp ai-soc inventory report.json -o catalog.json
+
+# Detect environment drift between two reports
+odcp ai-soc drift baseline.json current.json
+odcp ai-soc drift baseline.json current.json -o drift.json
+
+# Analyze detection outcomes and propose tuning
+odcp ai-soc feedback report.json
+odcp ai-soc feedback report.json -o feedback.json
+
+# Run a full AI SOC automation cycle
+odcp ai-soc cycle report.json
+odcp ai-soc cycle report.json --baseline baseline.json
+odcp ai-soc cycle report.json --baseline baseline.json -o cycle.json
+```
+
 ### Example output
 
 ```
@@ -330,7 +322,7 @@ odcp/
 ├── models/          # Pydantic data models (detection, dependency, coverage, correlation, OCSF, cross-platform, migration)
 ├── core/            # Engine, dependency graph
 ├── adapters/        # Vendor adapters (Splunk, Sigma + correlations/filters, Elastic, Sentinel, Chronicle)
-├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI, cross-platform, migration, CI/CD gate, DaC validator
+├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI, cross-platform, migration, CI/CD gate, DaC validator, AI SOC loop
 ├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
 └── cli/             # Typer CLI interface
@@ -347,6 +339,7 @@ odcp/
 | 5 | Sigma correlations/filters, STIX refresh, OCSF mapping, Splunk Cloud CI | **Complete** |
 | 6 | Chronicle YARA-L adapter, cross-platform readiness, migration analysis | **Complete** |
 | 7 | CI/CD integration and Detection-as-Code workflow support | **Complete** |
+| 8 | AI SOC automation loop (source catalog, drift, feedback, orchestrator) | **Complete** |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.
 

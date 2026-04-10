@@ -54,6 +54,18 @@ from odcp.models.runtime import (
     SavedSearchHealth,
 )
 from odcp.models.scoring import ReadinessScore, ReadinessStatus
+from odcp.models.source_catalog import (
+    AiSocCycleResult,
+    DriftEvent,
+    DriftSummary,
+    FeedbackSummary,
+    SourceCatalog,
+    SourceField,
+    SourceHealth,
+    SourceHealthStatus,
+    TuningProposal,
+    UnifiedSource,
+)
 
 __all__ = [
     "DetectionDataDecision",
@@ -107,4 +119,14 @@ __all__ = [
     "SigmaFilter",
     "TechniqueCoverage",
     "WhatIfResult",
+    "AiSocCycleResult",
+    "DriftEvent",
+    "DriftSummary",
+    "FeedbackSummary",
+    "SourceCatalog",
+    "SourceField",
+    "SourceHealth",
+    "SourceHealthStatus",
+    "TuningProposal",
+    "UnifiedSource",
 ]

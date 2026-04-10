@@ -155,6 +155,7 @@
 - ✅ Detection migration analysis (e.g., Splunk → Sentinel feasibility)
 - ✅ CI/CD integration (validate detections in PRs)
 - ✅ Detection-as-code workflow support
+- ✅ AI SOC automation loop (source catalog, drift detection, feedback, orchestration)
 - Web dashboard UI
 
 ---
@@ -178,3 +179,27 @@
 - `odcp ci <report> --min-score 0.5 --max-blocked-ratio 0.3 --max-critical 0`
 - `odcp validate <path> --platform <platform>` — Detection-as-Code validation
 - `odcp validate <path> --platform sigma --require-mitre --naming-pattern '^[a-z_]+$'`
+
+---
+
+## Phase 8: AI SOC Automation Loop — Complete
+
+**Goal:** Build a continuous AI SOC automation loop with unified source catalog, environment drift detection, detection feedback analysis, and data-aware migration gating.
+
+### Delivered
+
+- **Unified source catalog** (`odcp/analyzers/ai_soc/source_inventory.py`) — Extracts data sources from all 5 platform adapters (Splunk, Sigma, Elastic, Sentinel, Chronicle) into a vendor-neutral `SourceCatalog`; enriches with ATT&CK data source mapping via heuristic name matching; infers per-source health status; extracts common fields per source category
+- **Environment drift detection** (`odcp/analyzers/ai_soc/drift_detector.py`) — Compares source catalog snapshots to detect source additions/removals, health changes, field changes, and detection count changes; classifies drift events by severity (info/warning/critical); computes aggregate risk score and generates actionable recommendations
+- **Detection feedback analyzer** (`odcp/analyzers/ai_soc/feedback.py`) — Analyzes detection outcomes from runtime health data and readiness scores; identifies noisy (high alert volume), stale (blocked/inactive), and degraded detections; proposes tuning actions (disable, adjust_threshold, update_query, escalate_severity); generates summary recommendations
+- **Data-aware migration gate** (`odcp/analyzers/ai_soc/data_gate.py`) — Enriches migration analysis with `data_availability` blockers by cross-referencing target catalog against mapped features; provides `check_detection_feasibility()` for pre-creation data support verification
+- **AI SOC cycle orchestrator** (`odcp/analyzers/ai_soc/orchestrator.py`) — Chains all components into a single automation cycle: source catalog build → data-aware feasibility → drift detection → feedback analysis → priority action generation; produces `AiSocCycleResult` with unified metrics
+- **Pydantic v2 data models** (`odcp/models/source_catalog.py`) — `UnifiedSource`, `SourceCatalog`, `SourceField`, `SourceHealth`, `DriftEvent`, `DriftSummary`, `TuningProposal`, `FeedbackSummary`, `AiSocCycleResult`
+- CLI commands: `odcp ai-soc inventory`, `odcp ai-soc drift`, `odcp ai-soc feedback`, `odcp ai-soc cycle`
+- Unit and integration tests for all Phase 8 components (452 tests total)
+
+### CLI Additions
+
+- `odcp ai-soc inventory <report>` — Build unified source catalog from a scan report
+- `odcp ai-soc drift <baseline> <current>` — Detect environment drift between two reports
+- `odcp ai-soc feedback <report>` — Analyze detection outcomes and propose tuning actions
+- `odcp ai-soc cycle <report> [--baseline <baseline>]` — Run a full AI SOC automation cycle
