@@ -626,6 +626,288 @@ def scan_sentinel(
         )
 
 
+# ---------------------------------------------------------------------------
+# odcp scan chronicle <path>
+# ---------------------------------------------------------------------------
+@scan_app.command("chronicle")
+def scan_chronicle(
+    path: Path = typer.Argument(..., help="Path to Chronicle YARA-L rule directory or file."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write report to file."),
+    fmt: ReportFormat = typer.Option(
+        ReportFormat.json, "--format", "-f", help="Output format."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Scan Google Chronicle YARA-L detection rules for readiness."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {path}")
+        raise typer.Exit(code=1)
+
+    from odcp.adapters.chronicle import ChronicleAdapter
+    from odcp.core.engine import ScanEngine
+
+    adapter = ChronicleAdapter()
+    engine = ScanEngine(adapter)
+
+    with console.status("[bold blue]Scanning Chronicle YARA-L rules..."):
+        report = engine.scan(path)
+
+    if output:
+        _write_report(report, output, fmt)
+        console.print(f"[green]Report written to:[/green] {output}")
+    else:
+        _print_summary(report)
+        _print_chronicle_extras(report)
+        console.print(
+            "\n[dim]Use --output report.json to save full report.[/dim]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# odcp cross-platform <report_files...>
+# ---------------------------------------------------------------------------
+@app.command("cross-platform")
+def cross_platform_cmd(
+    report_files: list[Path] = typer.Argument(..., help="Two or more JSON scan report files."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write result to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Unified cross-platform readiness view across multiple scan reports."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if len(report_files) < 2:
+        console.print("[red]Error:[/red] Provide at least two scan report files.")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.cross_platform import CrossPlatformReadinessAnalyzer
+    from odcp.models import ScanReport
+
+    reports: list[ScanReport] = []
+    for rf in report_files:
+        if not rf.exists():
+            console.print(f"[red]Error:[/red] File not found: {rf}")
+            raise typer.Exit(code=1)
+        data = json.loads(rf.read_text(encoding="utf-8"))
+        reports.append(ScanReport.model_validate(data))
+
+    analyzer = CrossPlatformReadinessAnalyzer()
+    with console.status("[bold blue]Analyzing cross-platform readiness..."):
+        summary = analyzer.analyze(reports)
+
+    if output:
+        output.write_text(
+            json.dumps(summary.model_dump(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Cross-platform report written to:[/green] {output}")
+    else:
+        _print_cross_platform_summary(summary)
+
+
+# ---------------------------------------------------------------------------
+# odcp migrate <source_report> --target <platform>
+# ---------------------------------------------------------------------------
+@app.command("migrate")
+def migrate_cmd(
+    source_report: Path = typer.Argument(..., help="JSON scan report of the source platform."),
+    target: str = typer.Option(..., "--target", "-t", help="Target platform (splunk, sigma, elastic, sentinel, chronicle)."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write result to file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Analyze detection migration feasibility from one platform to another."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s"
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    valid_platforms = {"splunk", "sigma", "elastic", "sentinel", "chronicle"}
+    if target not in valid_platforms:
+        console.print(f"[red]Error:[/red] Invalid target platform: {target}. Choose from: {', '.join(sorted(valid_platforms))}")
+        raise typer.Exit(code=1)
+
+    if not source_report.exists():
+        console.print(f"[red]Error:[/red] File not found: {source_report}")
+        raise typer.Exit(code=1)
+
+    from odcp.analyzers.cross_platform import MigrationAnalyzer
+    from odcp.models import ScanReport
+
+    data = json.loads(source_report.read_text(encoding="utf-8"))
+    report = ScanReport.model_validate(data)
+
+    analyzer = MigrationAnalyzer()
+    with console.status(f"[bold blue]Analyzing migration to {target}..."):
+        migration = analyzer.analyze(report, target)
+
+    if output:
+        output.write_text(
+            json.dumps(migration.model_dump(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Migration report written to:[/green] {output}")
+    else:
+        _print_migration_summary(migration)
+
+
+# ---------------------------------------------------------------------------
+# Print helpers for new commands
+# ---------------------------------------------------------------------------
+def _print_chronicle_extras(report) -> None:
+    """Print Chronicle-specific extras."""
+    chronicle_dets = [d for d in report.detections if d.metadata.get("udm_entities")]
+    if not chronicle_dets:
+        return
+
+    # Show UDM entity usage
+    entity_counts: dict[str, int] = {}
+    for d in chronicle_dets:
+        for e in d.metadata.get("udm_entities", []):
+            entity_counts[e] = entity_counts.get(e, 0) + 1
+
+    table = Table(title="UDM Entity Usage")
+    table.add_column("Entity", style="bold")
+    table.add_column("Detections", justify="right")
+    for entity, count in sorted(entity_counts.items(), key=lambda x: -x[1]):
+        table.add_row(entity, str(count))
+    console.print(table)
+
+    # Show reference lists
+    ref_list_dets = [d for d in report.detections if d.metadata.get("reference_lists")]
+    if ref_list_dets:
+        console.print(
+            f"\n[bold]Reference lists used:[/bold] "
+            + ", ".join(
+                rl
+                for d in ref_list_dets
+                for rl in d.metadata.get("reference_lists", [])
+            )
+        )
+
+
+def _print_cross_platform_summary(summary) -> None:
+    """Print unified cross-platform readiness view."""
+    # Per-platform table
+    table = Table(title="Cross-Platform Readiness")
+    table.add_column("Platform", style="bold")
+    table.add_column("Vendor")
+    table.add_column("Detections", justify="right")
+    table.add_column("Runnable", justify="right", style="green")
+    table.add_column("Blocked", justify="right", style="red")
+    table.add_column("Score", justify="right")
+    table.add_column("MITRE", justify="right")
+
+    for p in summary.platforms:
+        table.add_row(
+            p.platform_name,
+            p.vendor,
+            str(p.total_detections),
+            str(p.runnable),
+            str(p.blocked),
+            f"{p.overall_score:.0%}",
+            str(len(p.mitre_technique_ids)),
+        )
+    console.print(table)
+
+    # Aggregate
+    agg_text = (
+        f"[bold]Total platforms:[/bold] {summary.total_platforms}\n"
+        f"[bold]Total detections:[/bold] {summary.total_detections}\n"
+        f"[bold]Aggregate score:[/bold] {summary.aggregate_score:.0%}\n"
+        f"[bold]Shared MITRE techniques:[/bold] {len(summary.shared_mitre_techniques)}"
+    )
+    console.print(Panel(agg_text, title="Aggregate", border_style="blue"))
+
+    # Unique coverage
+    if summary.unique_mitre_by_platform:
+        table2 = Table(title="Unique MITRE Coverage by Platform")
+        table2.add_column("Platform", style="bold")
+        table2.add_column("Unique Techniques", justify="right")
+        table2.add_column("IDs")
+        for name, techs in summary.unique_mitre_by_platform.items():
+            table2.add_row(name, str(len(techs)), ", ".join(techs[:10]))
+        console.print(table2)
+
+    # Recommendations
+    if summary.recommendations:
+        console.print("\n[bold]Recommendations:[/bold]")
+        for rec in summary.recommendations:
+            console.print(f"  [dim]-[/dim] {rec}")
+
+
+def _print_migration_summary(migration) -> None:
+    """Print migration analysis results."""
+    # Overview panel
+    overview = (
+        f"[bold]Source:[/bold] {migration.source_platform} -> "
+        f"[bold]Target:[/bold] {migration.target_platform}\n"
+        f"[bold]Total detections:[/bold] {migration.total_detections}\n"
+        f"[bold]Overall feasibility:[/bold] {migration.overall_feasibility:.0%}\n"
+        f"[bold]Estimated effort:[/bold] {migration.estimated_total_hours:.1f} hours"
+    )
+    console.print(Panel(overview, title="Migration Analysis", border_style="blue"))
+
+    # Complexity breakdown
+    table = Table(title="Migration Complexity Breakdown")
+    table.add_column("Complexity", style="bold")
+    table.add_column("Count", justify="right")
+    table.add_row("[green]Trivial[/green]", str(migration.trivial))
+    table.add_row("[green]Low[/green]", str(migration.low_complexity))
+    table.add_row("[yellow]Medium[/yellow]", str(migration.medium_complexity))
+    table.add_row("[red]High[/red]", str(migration.high_complexity))
+    table.add_row("[red bold]Infeasible[/red bold]", str(migration.infeasible))
+    console.print(table)
+
+    # Common blockers
+    if migration.common_blockers:
+        table2 = Table(title="Common Migration Blockers")
+        table2.add_column("Category", style="bold")
+        table2.add_column("Description")
+        table2.add_column("Severity")
+        for b in migration.common_blockers:
+            sev_style = {"high": "red", "medium": "yellow", "low": "dim"}.get(b.severity, "")
+            table2.add_row(
+                b.category,
+                b.description[:80],
+                f"[{sev_style}]{b.severity}[/{sev_style}]" if sev_style else b.severity,
+            )
+        console.print(table2)
+
+    # Top difficult detections
+    hard = [
+        r for r in migration.detection_results
+        if r.complexity in ("high", "infeasible")
+    ]
+    if hard:
+        table3 = Table(title="Detections Requiring Most Effort")
+        table3.add_column("Detection", style="bold")
+        table3.add_column("Complexity")
+        table3.add_column("Feasibility", justify="right")
+        table3.add_column("Blockers", justify="right")
+        for r in hard[:15]:
+            cstyle = {"high": "red", "infeasible": "red bold"}.get(r.complexity.value, "")
+            table3.add_row(
+                r.detection_name,
+                f"[{cstyle}]{r.complexity.value}[/{cstyle}]" if cstyle else r.complexity.value,
+                f"{r.feasibility_score:.0%}",
+                str(len(r.blockers)),
+            )
+        console.print(table3)
+
+
 def _print_cloud_check_summary(report) -> None:
     """Print Splunk Cloud readiness check results."""
     meta = report.metadata

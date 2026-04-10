@@ -21,13 +21,13 @@ ODCP provides a **unified control plane** that models environments, detections, 
 
 | Layer | Components |
 |-------|------------|
-| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph` |
+| **CLI / API** | `odcp scan`, `odcp report`, `odcp graph`, `odcp cross-platform`, `odcp migrate` |
 | **Reporting** | JSON, Markdown, HTML |
-| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI** |
+| **Analyzers** | Readiness, Dependency, Runtime Health, Coverage, Optimization, **OCSF Mapper**, **Splunk Cloud CI**, **Cross-Platform Readiness**, **Migration Analysis** |
 | **Core Engine** | Dependency Graph, Scoring, Findings, **STIX Refresh** |
-| **Adapters** | Splunk (static + runtime), Sigma **(+ correlations/filters)**, Elastic, Sentinel, *(Future: Chronicle)* |
+| **Adapters** | Splunk (static + runtime), Sigma **(+ correlations/filters)**, Elastic, Sentinel, **Chronicle (YARA-L)** |
 | **Collectors** | Local, Splunk REST API, *(Future: Remote)* |
-| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, **CorrelationRule**, **SigmaFilter**, **OcsfMapping**, ScanReport |
+| **Unified Models** | Environment, Detection, Dependency, Finding, ReadinessScore, RuntimeHealthScore, **CorrelationRule**, **SigmaFilter**, **OcsfMapping**, **CrossPlatformSummary**, **MigrationSummary**, ScanReport |
 
 ## Current MVP (v0.1.0)
 
@@ -73,11 +73,14 @@ ODCP provides a **unified control plane** that models environments, detections, 
 - **Splunk Cloud CI checks** — Validates app bundles for cloud readiness: disallowed file types, app.conf metadata, app.manifest, restricted SPL commands, Python 3 compatibility
 - **CLI flags** — `--ocsf`, `--cloud-check`, `--stix-file`
 
+**Phase 6 — Chronicle, Cross-Platform, and Migration:**
+- **Chronicle (Google) YARA-L adapter** — Parses YARA-L 2.0 detection rules (`.yaral`, `.yar`) with full section extraction (meta, events, match, outcome, condition); extracts UDM entity types, UDM field paths, reference list dependencies, match variables, and YARA-L functions
+- **Unified cross-platform readiness** — Aggregates scan reports from multiple platforms into a single view with per-platform readiness scores, shared/unique MITRE technique analysis, and actionable recommendations
+- **Detection migration analysis** — Evaluates feasibility and effort of migrating detections between any two platforms (Splunk, Sigma, Elastic, Sentinel, Chronicle); maps platform-specific features, identifies blockers, estimates effort in hours, and classifies complexity (trivial/low/medium/high/infeasible)
+- **CLI commands** — `odcp scan chronicle`, `odcp cross-platform`, `odcp migrate`
+
 ### Future
 
-- Chronicle (Google) YARA-L adapter
-- Unified cross-platform readiness view
-- Detection migration analysis
 - Web dashboard UI
 
 ## Installation
@@ -136,6 +139,33 @@ odcp scan elastic /path/to/elastic_rules --output report.json
 ```bash
 odcp scan sentinel /path/to/sentinel_rules
 odcp scan sentinel /path/to/sentinel_rules --output report.json
+```
+
+### Scan Chronicle YARA-L rules
+
+```bash
+odcp scan chronicle /path/to/chronicle_rules
+odcp scan chronicle /path/to/chronicle_rules --output report.json
+```
+
+### Cross-platform readiness view
+
+```bash
+# Generate reports from multiple platforms, then compare
+odcp scan sigma rules/ --output sigma.json
+odcp scan elastic rules/ --output elastic.json
+odcp scan chronicle rules/ --output chronicle.json
+
+odcp cross-platform sigma.json elastic.json chronicle.json
+odcp cross-platform sigma.json elastic.json --output cross-platform.json
+```
+
+### Detection migration analysis
+
+```bash
+# Analyze migration from one platform to another
+odcp migrate sigma.json --target chronicle
+odcp migrate splunk.json --target elastic --output migration.json
 ```
 
 ### Scan with runtime health (requires live Splunk)
@@ -206,17 +236,16 @@ odcp graph report.json
 
 ```bash
 pytest tests/ -v
-# 287 tests covering all adapters, analyzers, models, and integrations
 ```
 
 ## Project Structure
 
 ```
 odcp/
-├── models/          # Pydantic data models (detection, dependency, coverage, correlation, OCSF)
+├── models/          # Pydantic data models (detection, dependency, coverage, correlation, OCSF, cross-platform, migration)
 ├── core/            # Engine, dependency graph
-├── adapters/        # Vendor adapters (Splunk, Sigma + correlations/filters, Elastic, Sentinel)
-├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI
+├── adapters/        # Vendor adapters (Splunk, Sigma + correlations/filters, Elastic, Sentinel, Chronicle)
+├── analyzers/       # Readiness, dependency, runtime health, coverage, optimization, OCSF mapper, Splunk Cloud CI, cross-platform, migration
 ├── collectors/      # Data collection (local filesystem, Splunk REST API)
 ├── reporting/       # JSON, Markdown, HTML report generation
 └── cli/             # Typer CLI interface
@@ -231,6 +260,7 @@ odcp/
 | 3 | Semantic gap analysis and optimization | **Complete** |
 | 4 | Additional vendor adapters (Sigma, Sentinel, Elastic) | **Complete** |
 | 5 | Sigma correlations/filters, STIX refresh, OCSF mapping, Splunk Cloud CI | **Complete** |
+| 6 | Chronicle YARA-L adapter, cross-platform readiness, migration analysis | **Complete** |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for detailed roadmap and [docs/architecture.md](docs/architecture.md) for architecture details.
 

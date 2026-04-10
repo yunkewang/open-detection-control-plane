@@ -12,6 +12,14 @@ from odcp.models.coverage import (
     TechniqueCoverage,
     WhatIfResult,
 )
+from odcp.models.cross_platform import (
+    CrossPlatformSummary,
+    DetectionMigrationResult,
+    MigrationBlocker,
+    MigrationComplexity,
+    MigrationSummary,
+    PlatformReadiness,
+)
 from odcp.models.dependency import (
     Dependency,
     DependencyKind,
@@ -46,6 +54,7 @@ __all__ = [
     "CorrelationRule",
     "CorrelationType",
     "CoverageSummary",
+    "CrossPlatformSummary",
     "DataModelHealth",
     "DataSource",
     "DataSourceInventory",
@@ -54,6 +63,7 @@ __all__ = [
     "DependencyStats",
     "DependencyStatus",
     "Detection",
+    "DetectionMigrationResult",
     "DetectionSeverity",
     "Environment",
     "Finding",
@@ -62,6 +72,9 @@ __all__ = [
     "IndexHealth",
     "KnowledgeObject",
     "LookupHealth",
+    "MigrationBlocker",
+    "MigrationComplexity",
+    "MigrationSummary",
     "MitreMapping",
     "MitreTechnique",
     "OcsfEventClass",
@@ -69,6 +82,7 @@ __all__ = [
     "OcsfNormalizationResult",
     "OptimizationSummary",
     "Platform",
+    "PlatformReadiness",
     "ReadinessScore",
     "ReadinessStatus",
     "ReadinessSummary",

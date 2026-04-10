@@ -1,0 +1,26 @@
+rule malicious_ip_connection {
+
+  meta:
+    author = "ODCP Example"
+    description = "Detects connections to known malicious IP addresses from a reference list"
+    severity = "critical"
+    mitre_attack_tactic = "Command and Control"
+    mitre_attack_technique = "T1071"
+    status = "active"
+
+  events:
+    $network.metadata.event_type = "NETWORK_CONNECTION"
+    $network.target.ip = $dest_ip
+    $network.principal.hostname = $src_host
+    $dest_ip = %malicious_ips
+
+  match:
+    $src_host over 1h
+
+  outcome:
+    $connection_count = count_distinct($network.metadata.id)
+    $risk_score = max(95)
+
+  condition:
+    $network
+}

@@ -1,0 +1,15 @@
+rule old_detection_deprecated {
+
+  meta:
+    author = "ODCP Example"
+    description = "An old detection rule that has been deprecated"
+    severity = "low"
+    status = "deprecated"
+
+  events:
+    $event.metadata.event_type = "PROCESS_LAUNCH"
+    $event.target.process.file.full_path = /.*cmd\.exe/i
+
+  condition:
+    $event
+}
