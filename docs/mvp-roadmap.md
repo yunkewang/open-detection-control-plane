@@ -258,3 +258,58 @@ openai_tools    = get_tool_schemas("openai")      # → pass to openai.chat.comp
 from odcp.agent.orchestrator import run_agent
 answer = run_agent("Which detections are blocked and why?", report_path="report.json")
 ```
+
+---
+
+## Phase 10: Web Dashboard and Real-Time SOC Visibility UI — Complete
+
+**Goal:** Provide a browser-based SOC dashboard that displays detection posture, MITRE ATT&CK coverage, findings, and data source health in real time — with automatic refresh when the underlying report file changes and an integrated AI agent chat panel.
+
+### Delivered
+
+- **FastAPI web server** (`odcp/server/app.py`) — production-ready FastAPI application with CORS middleware, automatic OpenAPI docs (`/api/docs`), and asyncio lifespan management.
+- **Report store with live file watching** (`odcp/server/state.py`) — `ReportStore` holds the current `ScanReport` in memory; a background asyncio task polls the report JSON file's mtime every N seconds and reloads automatically on change, notifying all connected SSE clients.
+- **Server-Sent Events (SSE)** (`GET /api/events`) — push-based real-time channel; the browser reloads the active page automatically when the report is refreshed (zero polling from the browser).
+- **6 dashboard pages** (Jinja2 templates, dark theme, no build step):
+  - `/` — **Dashboard**: KPI cards (readiness score gauge, runnable/blocked/unknown counts, findings by severity, detection status bars), priority actions from AI SOC cycle
+  - `/detections` — **Detections table**: filterable by status and severity, score bar, missing-deps count, MITRE tags
+  - `/coverage` — **ATT&CK Coverage**: tactic-by-tactic progress bars, technique coverage grid (green/yellow/grey), coverage score
+  - `/findings` — **Findings**: severity filter, category filter, expandable remediation steps
+  - `/sources` — **Data Sources**: health badges (healthy/degraded/unavailable), detection count, field count
+  - `/agent` — **AI Agent Chat**: browser-based chat panel backed by the ODCP agent API; quick-query buttons; tool listing sidebar
+- **JSON API** (`/api/*`): `GET /api/posture`, `GET /api/detections`, `GET /api/findings`, `GET /api/coverage`, `GET /api/sources`, `POST /api/report/load`, `POST /api/agent/query`, `GET /api/agent/tools`
+- **Optional dependency**: `fastapi`, `uvicorn`, `python-multipart` gated under `pip install 'odcp[server]'`
+- CLI command: `odcp serve [report.json] [--port 8080] [--host 0.0.0.0] [--open]`
+- Unit and integration tests for all Phase 10 components (559 tests total)
+
+### Architecture
+
+```
+odcp/server/
+├── __init__.py          exports create_app, ReportStore
+├── app.py               FastAPI app factory + lifespan
+├── state.py             ReportStore — in-memory report + SSE subscribers + file watcher
+├── routes.py            UI page routes + JSON API routes + SSE endpoint
+└── templates/
+    ├── base.html         dark layout, sidebar nav, SSE JS reconnect loop
+    ├── dashboard.html    KPI cards, status bars, priority actions
+    ├── detections.html   filterable detection table
+    ├── coverage.html     MITRE tactic breakdown + technique grid
+    ├── findings.html     severity/category-filtered findings with remediation
+    ├── sources.html      data source health table
+    └── agent.html        AI agent chat + quick-query panel
+```
+
+### CLI
+
+```bash
+# Minimal — load report, open on localhost:8080
+odcp serve report.json
+
+# Custom host/port and open browser immediately
+odcp serve report.json --host 0.0.0.0 --port 9000 --open
+
+# Dev mode with auto-reload
+odcp serve report.json --reload --poll-interval 2
+```
+

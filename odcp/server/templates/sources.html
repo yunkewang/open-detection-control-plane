@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Data Sources — ODCP{% endblock %}
+
+{% block content %}
+{% if not sources.available %}
+<div class="panel">
+  <div class="panel-body">
+    <div class="empty">
+      <p style="font-size:24px;margin-bottom:12px">⊞</p>
+      <p style="font-weight:600;color:var(--text);margin-bottom:6px">Data source inventory unavailable</p>
+      <p>{{ sources.get('message', 'Load a scan report to see data source inventory.') }}</p>
+    </div>
+  </div>
+</div>
+{% else %}
+
+<div class="cards" style="margin-bottom:24px">
+  <div class="card">
+    <div class="card-label">Total Sources</div>
+    <div class="card-value text-blue">{{ sources.total }}</div>
+    <div class="card-sub">{{ sources.platforms|join(', ') }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Healthy</div>
+    <div class="card-value text-green">{{ sources.healthy }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Degraded</div>
+    <div class="card-value {% if sources.degraded > 0 %}text-yellow{% else %}text-muted{% endif %}">{{ sources.degraded }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Unavailable</div>
+    <div class="card-value {% if sources.unavailable > 0 %}text-red{% else %}text-muted{% endif %}">{{ sources.unavailable }}</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header">Data Sources</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Source Name</th>
+          <th>Platform</th>
+          <th>Kind</th>
+          <th>Health</th>
+          <th>Detections</th>
+          <th>Fields</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sources.sources %}
+        <tr>
+          <td style="font-weight:500;font-family:monospace;font-size:12px">{{ s.name }}</td>
+          <td><span style="font-size:11px;background:var(--surface2);padding:2px 8px;border-radius:4px">{{ s.platform }}</span></td>
+          <td style="color:var(--muted);font-size:12px">{{ s.kind }}</td>
+          <td><span class="badge badge-{{ s.health }}">{{ s.health }}</span></td>
+          <td style="text-align:right;font-size:13px">{{ s.detection_count }}</td>
+          <td style="text-align:right;font-size:13px;color:var(--muted)">{{ s.field_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

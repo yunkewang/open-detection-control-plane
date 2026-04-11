@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Detections — ODCP{% endblock %}
+
+{% block content %}
+<div class="filter-bar">
+  <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <label>Status:
+      <select name="status" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for s in ['runnable','partially_runnable','blocked','unknown'] %}
+          <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Severity:
+      <select name="severity" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for s in ['critical','high','medium','low','informational'] %}
+          <option value="{{ s }}" {% if severity_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if status_filter or severity_filter %}
+      <a href="/detections" class="btn">✕ Clear filters</a>
+    {% endif %}
+  </form>
+  <span style="margin-left:auto;font-size:12px;color:var(--muted)">{{ detections|length }} detections</span>
+</div>
+
+{% if detections %}
+<div class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Severity</th>
+          <th>Status</th>
+          <th>Score</th>
+          <th>Missing Deps</th>
+          <th>Tags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in detections %}
+        <tr>
+          <td>
+            <div style="font-weight:500">{{ d.name }}</div>
+            {% if d.description %}
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">{{ d.description }}</div>
+            {% endif %}
+          </td>
+          <td><span class="badge badge-{{ d.severity }}">{{ d.severity }}</span></td>
+          <td><span class="badge badge-{{ d.status }}">{{ d.status|replace('_',' ') }}</span></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="score-bar" style="width:60px">
+                <div class="score-bar-fill" style="width:{{ d.score }}%;background:{% if d.score >= 70 %}var(--green){% elif d.score >= 30 %}var(--yellow){% else %}var(--red){% endif %}"></div>
+              </div>
+              <span style="font-size:12px;color:var(--muted)">{{ d.score }}%</span>
+            </div>
+          </td>
+          <td>
+            {% if d.missing_deps > 0 %}
+              <span class="text-red" style="font-size:13px">{{ d.missing_deps }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% for tag in d.tags %}
+              <span style="font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:4px;margin-right:3px;color:var(--muted)">{{ tag }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty">No detections match the current filters.</div>
+{% endif %}
+{% endblock %}

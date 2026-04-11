@@ -1792,5 +1792,71 @@ def agent_chat(
     )
 
 
+# ---------------------------------------------------------------------------
+# odcp serve [report.json]
+# ---------------------------------------------------------------------------
+@app.command("serve")
+def serve(
+    report: Optional[Path] = typer.Argument(
+        None,
+        help="Scan report JSON file to load on startup.",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host."),
+    port: int = typer.Option(8080, "--port", "-p", help="Bind port."),
+    poll_interval: float = typer.Option(
+        5.0, "--poll-interval",
+        help="Seconds between report file checks (0 to disable).",
+    ),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev mode)."),
+    open_browser: bool = typer.Option(False, "--open", "-o", help="Open browser on startup."),
+) -> None:
+    """Start the ODCP web dashboard.
+
+    Requires the 'server' extra: pip install 'odcp[server]'
+
+    Example:
+
+        odcp serve report.json --port 8080
+    """
+    try:
+        import uvicorn  # type: ignore[import]
+    except ImportError:
+        console.print(
+            "[red]Error:[/red] 'uvicorn' is required. "
+            "Install it with: [bold]pip install 'odcp[server]'[/bold]"
+        )
+        raise typer.Exit(code=1)
+
+    from odcp.server.app import create_app
+    from odcp.server.state import ReportStore
+
+    report_path = str(report) if report else None
+    store = ReportStore(report_path, poll_interval=poll_interval)
+    app_instance = create_app(store)
+
+    url = f"http://{host}:{port}"
+    console.print(Panel(
+        f"[bold]ODCP Dashboard[/bold]\n"
+        f"[dim]URL:[/dim]     [cyan]{url}[/cyan]\n"
+        f"[dim]Report:[/dim]  {report_path or 'none (load via /api/report/load)'}\n"
+        f"[dim]API docs:[/dim] {url}/api/docs",
+        border_style="cyan",
+        title="Starting server",
+    ))
+
+    if open_browser:
+        import threading
+        import webbrowser
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+    uvicorn.run(
+        app_instance,
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="warning",
+    )
+
+
 if __name__ == "__main__":
     app()
