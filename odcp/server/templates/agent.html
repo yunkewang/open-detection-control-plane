@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}AI Agent — ODCP{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 280px;gap:20px">
+
+  <!-- Chat panel -->
+  <div class="panel" style="display:flex;flex-direction:column">
+    <div class="panel-header">
+      AI Agent Chat
+      <span style="font-size:11px;color:var(--muted)">Powered by Claude + ODCP tools</span>
+    </div>
+    <div class="panel-body" style="flex:1;display:flex;flex-direction:column">
+      <div class="chat-area" id="chat-area">
+        <div class="chat-msg agent">
+          <div class="from">Agent</div>
+          <pre>Hello! I'm the ODCP AI Agent. I can help you understand your detection posture.
+
+Try asking:
+• "What is my overall readiness score?"
+• "Which detections are blocked?"
+• "What are the top priority actions?"
+• "Explain the Data Exfiltration detection"
+• "What MITRE techniques am I missing?"{% if not report_path %}
+
+⚠ No report is loaded. Load a report first:
+  odcp serve report.json{% endif %}</pre>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <input type="text" id="chat-input" placeholder="Ask a question about your detection posture…"
+          style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+                 padding:10px 14px;border-radius:6px;font-size:13px;outline:none"
+          onkeydown="if(event.key==='Enter')sendMessage()">
+        <button class="btn btn-primary" onclick="sendMessage()" id="send-btn">Send</button>
+      </div>
+
+      <div id="api-error" style="display:none;margin-top:8px;font-size:12px;color:var(--red)"></div>
+    </div>
+  </div>
+
+  <!-- Tools sidebar -->
+  <div>
+    <div class="panel">
+      <div class="panel-header" style="font-size:12px">Available Tools ({{ tool_list|length }})</div>
+      <div style="padding:8px">
+        {% for t in tool_list %}
+        <div style="padding:6px 10px;border-radius:4px;margin-bottom:2px;cursor:default" title="{{ t.description }}">
+          <div style="font-size:11px;font-weight:600;color:var(--accent)">{{ t.name }}</div>
+          <div style="font-size:10px;color:var(--muted);line-height:1.3;margin-top:1px">{{ t.description }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <div class="panel-header" style="font-size:12px">Quick Queries</div>
+      <div style="padding:8px">
+        {% for q in [
+          'What is my readiness score?',
+          'List all blocked detections',
+          'What are the top priority actions?',
+          'Show me high severity findings',
+          'What MITRE coverage gaps exist?',
+          'Which detections need tuning?'
+        ] %}
+        <button onclick="setQuery(this.textContent)"
+          style="display:block;width:100%;text-align:left;background:none;border:1px solid var(--border);
+                 border-radius:4px;padding:6px 10px;margin-bottom:4px;color:var(--muted);
+                 font-size:11px;cursor:pointer"
+          onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+          {{ q }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const chatArea = document.getElementById('chat-area');
+  const chatInput = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('send-btn');
+  const apiError = document.getElementById('api-error');
+  const reportPath = {{ report_path | tojson }};
+
+  function appendMessage(role, text) {
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + role;
+    div.innerHTML = '<div class="from">' + (role === 'user' ? 'You' : 'Agent') + '</div><pre>' +
+      text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>';
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function appendThinking() {
+    const div = document.createElement('div');
+    div.className = 'chat-msg agent';
+    div.id = 'thinking';
+    div.innerHTML = '<div class="from">Agent</div><pre style="color:var(--muted)">Thinking…</pre>';
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function removeThinking() {
+    const el = document.getElementById('thinking');
+    if (el) el.remove();
+  }
+
+  function setQuery(text) {
+    chatInput.value = text;
+    chatInput.focus();
+  }
+
+  async function sendMessage() {
+    const prompt = chatInput.value.trim();
+    if (!prompt) return;
+
+    chatInput.value = '';
+    sendBtn.disabled = true;
+    apiError.style.display = 'none';
+    appendMessage('user', prompt);
+    appendThinking();
+
+    try {
+      const res = await fetch('/api/agent/query', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt, report_path: reportPath}),
+      });
+
+      removeThinking();
+
+      if (res.status === 503) {
+        appendMessage('agent', '⚠ The Anthropic SDK is not installed.\n\nInstall it to enable the AI agent:\n  pip install \'odcp[agent]\'\n\nOr use the CLI directly:\n  odcp agent run "' + prompt + '"');
+      } else if (!res.ok) {
+        const err = await res.json();
+        appendMessage('agent', '⚠ Error: ' + (err.detail || 'Unknown error'));
+      } else {
+        const data = await res.json();
+        appendMessage('agent', data.answer);
+      }
+    } catch (e) {
+      removeThinking();
+      appendMessage('agent', '⚠ Network error: ' + e.message);
+    } finally {
+      sendBtn.disabled = false;
+      chatInput.focus();
+    }
+  }
+
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+</script>
+{% endblock %}

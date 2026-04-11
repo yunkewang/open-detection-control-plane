@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ODCP Dashboard{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #21262d;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --red:       #f85149;
+      --orange:    #e3b341;
+      --purple:    #bc8cff;
+      --sidebar-w: 220px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+           background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; position: fixed; top: 0; left: 0; height: 100vh; z-index: 100;
+    }
+    .sidebar-logo {
+      padding: 20px 16px 16px; border-bottom: 1px solid var(--border);
+      font-size: 13px; font-weight: 600; letter-spacing: .04em; color: var(--accent);
+    }
+    .sidebar-logo span { display: block; font-size: 10px; font-weight: 400; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+    .sidebar-nav { padding: 12px 0; flex: 1; overflow-y: auto; }
+    .sidebar-nav a {
+      display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+      color: var(--muted); text-decoration: none; font-size: 13px; border-left: 3px solid transparent;
+      transition: color .15s, background .15s;
+    }
+    .sidebar-nav a:hover { color: var(--text); background: var(--surface2); }
+    .sidebar-nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,.07); }
+    .sidebar-nav .icon { width: 16px; text-align: center; }
+    .sidebar-footer {
+      padding: 12px 16px; border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--muted);
+    }
+    .sse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
+    .sse-dot.live { background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+
+    /* Main content */
+    .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+    .topbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar-title { font-size: 15px; font-weight: 600; }
+    .topbar-meta { font-size: 12px; color: var(--muted); }
+    .content { padding: 24px; flex: 1; }
+
+    /* Cards */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .card-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .text-green { color: var(--green); }
+    .text-yellow { color: var(--yellow); }
+    .text-red { color: var(--red); }
+    .text-blue { color: var(--accent); }
+    .text-muted { color: var(--muted); }
+
+    /* Score bar */
+    .score-bar-wrap { margin-top: 8px; }
+    .score-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase;
+         letter-spacing: .05em; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    /* Badges */
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 600; letter-spacing: .03em;
+    }
+    .badge-critical { background: rgba(248,81,73,.15); color: var(--red); }
+    .badge-high     { background: rgba(227,179,65,.15); color: var(--orange); }
+    .badge-medium   { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .badge-low      { background: rgba(63,185,80,.15);  color: var(--green); }
+    .badge-info     { background: rgba(139,148,158,.15); color: var(--muted); }
+    .badge-runnable         { background: rgba(63,185,80,.15);  color: var(--green); }
+    .badge-partially_runnable { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .badge-blocked          { background: rgba(248,81,73,.15);  color: var(--red); }
+    .badge-unknown          { background: rgba(139,148,158,.15); color: var(--muted); }
+    .badge-healthy          { background: rgba(63,185,80,.15);  color: var(--green); }
+    .badge-degraded         { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .badge-unavailable      { background: rgba(248,81,73,.15);  color: var(--red); }
+
+    /* Section headers */
+    .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+    .panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .panel-body { padding: 16px 18px; }
+
+    /* Filter bar */
+    .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+    .filter-bar select, .filter-bar input {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none;
+    }
+    .filter-bar select:focus, .filter-bar input:focus { border-color: var(--accent); }
+    .filter-bar label { font-size: 12px; color: var(--muted); }
+    .btn {
+      padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 500;
+      border: 1px solid var(--border); cursor: pointer; background: var(--surface2); color: var(--text);
+      text-decoration: none; display: inline-block;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .btn-primary:hover { opacity: .9; color: var(--bg); }
+
+    /* Empty state */
+    .empty { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* Priority actions */
+    .action-list { list-style: none; }
+    .action-list li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.5; }
+    .action-list li:last-child { border-bottom: none; }
+
+    /* MITRE grid */
+    .mitre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+    .mitre-cell {
+      padding: 10px; border-radius: 6px; font-size: 11px; cursor: default;
+      border: 1px solid var(--border);
+    }
+    .mitre-cell .tid { font-size: 10px; color: var(--muted); }
+    .mitre-cell.covered { background: rgba(63,185,80,.12); border-color: rgba(63,185,80,.3); }
+    .mitre-cell.partial  { background: rgba(210,153,34,.12); border-color: rgba(210,153,34,.3); }
+    .mitre-cell.uncovered { background: var(--surface2); }
+
+    /* Scrollable chat */
+    .chat-area { height: 400px; overflow-y: auto; background: var(--surface2); border-radius: 6px; padding: 16px; margin-bottom: 12px; }
+    .chat-msg { margin-bottom: 12px; }
+    .chat-msg .from { font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
+    .chat-msg.user .from { color: var(--accent); }
+    .chat-msg.agent .from { color: var(--green); }
+    .chat-msg pre { white-space: pre-wrap; word-break: break-word; font-size: 13px; font-family: inherit; line-height: 1.6; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; }
+      .cards { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    ODCP
+    <span>Detection Control Plane</span>
+  </div>
+  <div class="sidebar-nav">
+    <a href="/" class="{% if page == 'dashboard' %}active{% endif %}">
+      <span class="icon">⬡</span> Dashboard
+    </a>
+    <a href="/detections" class="{% if page == 'detections' %}active{% endif %}">
+      <span class="icon">⚑</span> Detections
+    </a>
+    <a href="/coverage" class="{% if page == 'coverage' %}active{% endif %}">
+      <span class="icon">◎</span> ATT&CK Coverage
+    </a>
+    <a href="/findings" class="{% if page == 'findings' %}active{% endif %}">
+      <span class="icon">⚠</span> Findings
+    </a>
+    <a href="/sources" class="{% if page == 'sources' %}active{% endif %}">
+      <span class="icon">⊞</span> Data Sources
+    </a>
+    <a href="/agent" class="{% if page == 'agent' %}active{% endif %}">
+      <span class="icon">✦</span> AI Agent
+    </a>
+  </div>
+  <div class="sidebar-footer">
+    <span class="sse-dot" id="sse-dot"></span>
+    <span id="sse-status">connecting…</span>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">
+      {% if posture %}{{ posture.environment }} — {{ posture.platform }}{% else %}No report loaded{% endif %}
+    </div>
+    <div class="topbar-meta">
+      {% if posture %}Last scan: {{ posture.scan_timestamp[:19]|replace("T"," ") }}{% endif %}
+    </div>
+  </div>
+
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<script>
+  // SSE live update indicator
+  (function () {
+    const dot = document.getElementById('sse-dot');
+    const status = document.getElementById('sse-status');
+    let es;
+
+    function connect() {
+      es = new EventSource('/api/events');
+
+      es.onopen = () => {
+        dot.classList.add('live');
+        status.textContent = 'live';
+      };
+
+      es.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.event === 'report_updated') {
+          // Reload the page content when the report file changes
+          setTimeout(() => window.location.reload(), 500);
+        }
+      };
+
+      es.onerror = () => {
+        dot.classList.remove('live');
+        status.textContent = 'reconnecting…';
+        es.close();
+        setTimeout(connect, 5000);
+      };
+    }
+
+    connect();
+  })();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

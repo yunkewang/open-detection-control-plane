@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}ATT&CK Coverage — ODCP{% endblock %}
+
+{% block content %}
+{% if not coverage.available %}
+<div class="panel">
+  <div class="panel-body">
+    <div class="empty">
+      <p style="font-size:24px;margin-bottom:12px">◎</p>
+      <p style="font-weight:600;color:var(--text);margin-bottom:6px">Coverage analysis not available</p>
+      <p>{{ coverage.get('message', 'Re-scan with the --coverage flag.') }}</p>
+      <p style="margin-top:12px;font-size:12px;background:var(--surface2);padding:8px 12px;border-radius:6px;display:inline-block">
+        <code>odcp scan splunk /path/to/app --coverage</code>
+      </p>
+    </div>
+  </div>
+</div>
+{% else %}
+
+<!-- Coverage KPIs -->
+<div class="cards" style="margin-bottom:24px">
+  <div class="card">
+    <div class="card-label">Coverage Score</div>
+    <div class="card-value {% if coverage.coverage_score >= 60 %}text-green{% elif coverage.coverage_score >= 30 %}text-yellow{% else %}text-red{% endif %}">
+      {{ coverage.coverage_score }}%
+    </div>
+    <div class="score-bar-wrap">
+      <div class="score-bar">
+        <div class="score-bar-fill" style="width:{{ coverage.coverage_score }}%;background:{% if coverage.coverage_score >= 60 %}var(--green){% elif coverage.coverage_score >= 30 %}var(--yellow){% else %}var(--red){% endif %}"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">Covered</div>
+    <div class="card-value text-green">{{ coverage.covered }}</div>
+    <div class="card-sub">techniques</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Partial</div>
+    <div class="card-value text-yellow">{{ coverage.partial }}</div>
+    <div class="card-sub">techniques</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Uncovered</div>
+    <div class="card-value text-red">{{ coverage.uncovered }}</div>
+    <div class="card-sub">techniques</div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div style="display:flex;gap:16px;margin-bottom:16px;font-size:12px">
+  <span><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(63,185,80,.3);margin-right:4px"></span>Covered</span>
+  <span><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(210,153,34,.3);margin-right:4px"></span>Partial</span>
+  <span><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:var(--surface2);margin-right:4px"></span>Uncovered</span>
+</div>
+
+<!-- Tactic breakdown -->
+{% if coverage.tactic_breakdown %}
+<div class="panel" style="margin-bottom:20px">
+  <div class="panel-header">Coverage by Tactic</div>
+  <div class="panel-body">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+      {% for tactic, stats in coverage.tactic_breakdown.items() %}
+        {% set pct = ((stats.get('covered',0) / stats.get('total',1)) * 100)|round|int %}
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+            <span style="text-transform:capitalize">{{ tactic|replace('_',' ') }}</span>
+            <span style="color:var(--muted)">{{ stats.get('covered',0) }}/{{ stats.get('total',0) }}</span>
+          </div>
+          <div class="score-bar">
+            <div class="score-bar-fill" style="width:{{ pct }}%;background:{% if pct >= 60 %}var(--green){% elif pct >= 30 %}var(--yellow){% else %}var(--red){% endif %}"></div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Technique grid -->
+{% if coverage.techniques %}
+<div class="panel">
+  <div class="panel-header">Technique Coverage Grid</div>
+  <div class="panel-body">
+    <div class="mitre-grid">
+      {% for t in coverage.techniques %}
+        <div class="mitre-cell {{ t.get('coverage','uncovered') }}" title="{{ t.get('tactic','') }} | {{ t.get('detection_count',0) }} detection(s)">
+          <div class="tid">{{ t.get('technique_id','') }}</div>
+          <div style="font-size:11px;margin-top:2px;line-height:1.3">{{ t.get('technique_name','')[:30] }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

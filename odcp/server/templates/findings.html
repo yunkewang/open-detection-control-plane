@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Findings — ODCP{% endblock %}
+
+{% block content %}
+<div class="filter-bar">
+  <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <label>Severity:
+      <select name="severity" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for s in ['critical','high','medium','low','info'] %}
+          <option value="{{ s }}" {% if severity_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Category:
+      <select name="category" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for c in ['missing_dependency','unresolved_reference','configuration_issue','data_gap',
+                     'optimization_opportunity','runtime_health','stale_execution',
+                     'data_flow_issue','acceleration_issue'] %}
+          <option value="{{ c }}" {% if category_filter == c %}selected{% endif %}>{{ c|replace('_',' ') }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if severity_filter or category_filter %}
+      <a href="/findings" class="btn">✕ Clear</a>
+    {% endif %}
+  </form>
+  <span style="margin-left:auto;font-size:12px;color:var(--muted)">{{ findings|length }} findings</span>
+</div>
+
+{% if findings %}
+  {% for f in findings %}
+  <div class="panel" style="margin-bottom:12px">
+    <div class="panel-header" style="padding:12px 16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="badge badge-{{ f.severity }}">{{ f.severity }}</span>
+        <span style="font-size:13px;font-weight:600">{{ f.title }}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">
+        <span style="background:var(--surface2);padding:2px 8px;border-radius:4px">{{ f.category|replace('_',' ') }}</span>
+        &nbsp;
+        <span>{{ f.detection }}</span>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:12px 16px">
+      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:{% if f.remediation %}10px{% else %}0{% endif %}">
+        {{ f.description }}
+      </p>
+      {% if f.remediation %}
+        <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);border-radius:6px;padding:10px 14px">
+          <div style="font-size:11px;color:var(--accent);font-weight:600;margin-bottom:4px">Fix →</div>
+          <div style="font-size:13px">{{ f.remediation }}</div>
+          {% if f.remediation_steps %}
+            <ul style="margin-top:6px;padding-left:16px;font-size:12px;color:var(--muted)">
+              {% for step in f.remediation_steps %}
+                <li style="margin-bottom:2px">{{ step }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty">No findings match the current filters.</div>
+{% endif %}
+{% endblock %}
