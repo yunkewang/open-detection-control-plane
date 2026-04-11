@@ -6,6 +6,14 @@ from odcp.models.ai_soc import (
     DataSourceCapability,
     DetectionDataDecision,
 )
+from odcp.models.collector import (
+    AgentConfig,
+    AgentHeartbeat,
+    AgentInfo,
+    AgentRegistration,
+    AgentStatus,
+    FleetSummary,
+)
 from odcp.models.correlation import CorrelationRule, CorrelationType, SigmaFilter
 from odcp.models.coverage import (
     CoverageSummary,
@@ -68,6 +76,12 @@ from odcp.models.source_catalog import (
 )
 
 __all__ = [
+    "AgentConfig",
+    "AgentHeartbeat",
+    "AgentInfo",
+    "AgentRegistration",
+    "AgentStatus",
+    "FleetSummary",
     "DetectionDataDecision",
     "DataSourceCapability",
     "AutomationActionItem",

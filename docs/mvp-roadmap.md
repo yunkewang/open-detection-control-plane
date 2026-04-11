@@ -313,3 +313,94 @@ odcp serve report.json --host 0.0.0.0 --port 9000 --open
 odcp serve report.json --reload --poll-interval 2
 ```
 
+---
+
+## Phase 11: Distributed Collection Agents and Enterprise-Scale Deployment — Complete
+
+**Goal:** Enable any number of remote ODCP agents to scan their local platform environments and push results back to a central server; provide a Fleet dashboard for unified visibility across the entire agent fleet.
+
+### Delivered
+
+- **Collector agent** (`odcp/collector/agent.py`) — `CollectionAgent` runs a blocking scan loop on any host: registers with the central server on startup, runs an immediate scan, then repeats on a configurable interval; sends heartbeats between scans; dispatches to the correct platform adapter (Splunk, Sigma, Elastic, Sentinel, Chronicle); handles `SIGINT`/`SIGTERM` for clean shutdown; supports both YAML config files and inline `from_args()` construction.
+- **HTTP push client** (`odcp/collector/push_client.py`) — `PushClient` sends scan reports, heartbeats, and registration calls to the central server using only Python's built-in `urllib` (zero extra runtime dependencies).
+- **Thread-safe agent registry** (`odcp/collector/registry.py`) — `AgentRegistry` stores all registered agents and their latest reports in memory; all mutations hold a `threading.Lock`; a background asyncio task periodically marks agents offline when no heartbeat has been received within `scan_interval × threshold_multiplier` seconds; state can be saved/loaded to disk for persistence across server restarts.
+- **Fleet data models** (`odcp/models/collector.py`) — Pydantic v2 models: `AgentConfig`, `AgentRegistration`, `AgentHeartbeat`, `AgentInfo`, `AgentStatus`, `FleetSummary`; `AgentInfo.is_stale()` computes staleness from `last_seen`; `FleetSummary.from_agents()` aggregates counts and average scores.
+- **Fleet REST API** (`odcp/server/fleet_routes.py`) — 8 endpoints mounted on the FastAPI server:
+  - `GET /api/fleet/health` — health check
+  - `POST /api/fleet/agents/register` — register/re-register an agent
+  - `POST /api/fleet/agents/{id}/report` — accept a full scan report
+  - `POST /api/fleet/agents/{id}/heartbeat` — accept a liveness heartbeat
+  - `DELETE /api/fleet/agents/{id}` — deregister on clean shutdown
+  - `GET /api/fleet/agents` — list agents (filterable by status, environment, platform)
+  - `GET /api/fleet/agents/{id}` — get single agent info
+  - `GET /api/fleet/agents/{id}/report` — retrieve latest agent report
+  - `GET /api/fleet/summary` — fleet-wide aggregated summary
+- **Fleet dashboard page** (`/fleet`) — dark-theme web page with KPI cards (total/active/degraded/offline agents, total detections, average readiness), sortable agent table with status badges, readiness score progress bars, last-seen timestamps, and a Quick Start deployment snippet; auto-refreshes every 30 seconds.
+- **Server integration** — `AgentRegistry` attached to `app.state.agent_registry`; staleness checker starts/stops with the FastAPI lifespan; `create_app()` accepts an optional `registry` parameter for testing.
+- **CLI commands** (`odcp collector`):
+  - `odcp collector start` — launch a blocking collector agent (YAML config or inline args)
+  - `odcp collector status` — fetch fleet summary from the central server
+  - `odcp collector list` — list all agents with status/platform/readiness table
+- Unit and integration tests for all Phase 11 components (646 tests total)
+
+### Architecture
+
+```
+odcp/
+├── models/
+│   └── collector.py          AgentConfig, AgentInfo, AgentStatus, FleetSummary, …
+├── collector/
+│   ├── __init__.py           exports CollectionAgent, PushClient, AgentRegistry
+│   ├── agent.py              CollectionAgent — blocking scan loop with signal handlers
+│   ├── push_client.py        PushClient — urllib-based HTTP client (zero extra deps)
+│   └── registry.py           AgentRegistry — thread-safe in-memory store + staleness checker
+└── server/
+    ├── fleet_routes.py        Fleet API routes + /fleet UI page
+    └── templates/fleet.html   Fleet dashboard (dark theme, KPI cards, agent table)
+```
+
+### CLI
+
+```bash
+# Deploy a collector on any remote host
+odcp collector start \
+  --platform splunk \
+  --scan-path /opt/splunk/etc/apps/security \
+  --central-url http://odcp-server:8080 \
+  --environment "Production SIEM" \
+  --interval 300
+
+# Or from a YAML config file
+odcp collector start --config agent.yaml
+
+# Check fleet status from anywhere
+odcp collector status --central-url http://odcp-server:8080
+
+# List all agents
+odcp collector list --central-url http://odcp-server:8080 --status active
+```
+
+### Python API Example
+
+```python
+from odcp.collector.agent import CollectionAgent
+from odcp.collector.registry import AgentRegistry
+
+# Start a collector agent (blocks until stopped)
+agent = CollectionAgent.from_args(
+    agent_id="my-agent",
+    environment_name="Prod SIEM",
+    platform="splunk",
+    scan_path="/opt/apps/security",
+    central_url="http://odcp-server:8080",
+)
+agent.start()
+
+# Server side — registry is attached to the FastAPI app
+from odcp.server.app import create_app
+from odcp.collector.registry import AgentRegistry
+
+registry = AgentRegistry()
+app = create_app(registry=registry)
+```
+

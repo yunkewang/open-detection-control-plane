@@ -31,6 +31,9 @@ app.add_typer(soc_app, name="ai-soc")
 agent_app = typer.Typer(help="AI agent integration — LLM-callable tools and agentic queries.")
 app.add_typer(agent_app, name="agent")
 
+collector_app = typer.Typer(help="Distributed collector agents — deploy and manage remote scanners.")
+app.add_typer(collector_app, name="collector")
+
 console = Console()
 
 
@@ -1856,6 +1859,205 @@ def serve(
         reload=reload,
         log_level="warning",
     )
+
+
+# ---------------------------------------------------------------------------
+# odcp collector start
+# ---------------------------------------------------------------------------
+@collector_app.command("start")
+def collector_start(
+    platform: str = typer.Option(
+        ..., "--platform", "-p",
+        help="Detection platform (splunk, sigma, elastic, sentinel, chronicle).",
+    ),
+    scan_path: str = typer.Option(
+        ..., "--scan-path", help="Path to scan on this host."
+    ),
+    central_url: str = typer.Option(
+        ..., "--central-url", "-u", help="Central ODCP server URL (e.g. http://odcp:8080)."
+    ),
+    environment: str = typer.Option(
+        ..., "--environment", "-e", help="Human-readable environment name (e.g. 'Prod SIEM')."
+    ),
+    agent_id: Optional[str] = typer.Option(
+        None, "--agent-id", help="Agent ID (auto-generated from hostname if omitted)."
+    ),
+    interval: int = typer.Option(
+        300, "--interval", "-i", help="Scan interval in seconds."
+    ),
+    heartbeat: int = typer.Option(
+        60, "--heartbeat", help="Heartbeat interval in seconds."
+    ),
+    api_token: Optional[str] = typer.Option(
+        None, "--token", help="API token for server authentication."
+    ),
+    tags: Optional[str] = typer.Option(
+        None, "--tags", help="Comma-separated tags (e.g. 'prod,us-east')."
+    ),
+    config: Optional[Path] = typer.Option(
+        None, "--config", "-c", help="Path to YAML agent config file (overrides other options)."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Scan and log without pushing to server."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    """Start a collector agent that scans locally and pushes results to the central server.
+
+    The agent runs in a blocking loop until interrupted (Ctrl-C / SIGTERM).
+
+    Examples:
+
+        odcp collector start --platform splunk --scan-path /opt/apps/security \\
+            --central-url http://odcp-server:8080 --environment "Production SIEM"
+
+        odcp collector start --config agent.yaml
+    """
+    log_level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=log_level, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
+
+    from odcp.collector.agent import CollectionAgent
+
+    if config:
+        if not config.exists():
+            console.print(f"[red]Error:[/red] Config file not found: {config}")
+            raise typer.Exit(code=1)
+        agent = CollectionAgent.from_yaml(config, heartbeat_interval_seconds=heartbeat, dry_run=dry_run)
+    else:
+        import socket
+        resolved_id = agent_id or f"{socket.gethostname()}-{platform}"
+        tag_list = [t.strip() for t in tags.split(",")] if tags else []
+        agent = CollectionAgent.from_args(
+            agent_id=resolved_id,
+            environment_name=environment,
+            platform=platform,
+            scan_path=scan_path,
+            central_url=central_url,
+            scan_interval_seconds=interval,
+            api_token=api_token,
+            tags=tag_list,
+            heartbeat_interval_seconds=heartbeat,
+            dry_run=dry_run,
+        )
+
+    console.print(
+        Panel(
+            f"[bold]Agent:[/bold]       {agent.config.agent_id}\n"
+            f"[bold]Environment:[/bold] {agent.config.environment_name}\n"
+            f"[bold]Platform:[/bold]    {agent.config.platform}\n"
+            f"[bold]Scan path:[/bold]   {agent.config.scan_path}\n"
+            f"[bold]Central URL:[/bold] {agent.config.central_url}\n"
+            f"[bold]Interval:[/bold]    {agent.config.scan_interval_seconds}s\n"
+            f"[dim]Dry-run:[/dim]      {'yes' if dry_run else 'no'}",
+            title="Starting collector agent",
+            border_style="cyan",
+        )
+    )
+
+    agent.start()
+
+
+# ---------------------------------------------------------------------------
+# odcp collector status
+# ---------------------------------------------------------------------------
+@collector_app.command("status")
+def collector_status(
+    central_url: str = typer.Option(
+        ..., "--central-url", "-u", help="Central ODCP server URL."
+    ),
+    api_token: Optional[str] = typer.Option(
+        None, "--token", help="API token for server authentication."
+    ),
+) -> None:
+    """Show fleet summary from the central server."""
+    from odcp.collector.push_client import PushClient
+
+    client = PushClient(central_url, agent_id="cli", api_token=api_token)
+
+    if not client.check_health():
+        console.print(f"[red]Error:[/red] Cannot reach server at {central_url}")
+        raise typer.Exit(code=1)
+
+    summary = client.get_fleet_summary()
+    if not summary:
+        console.print("[red]Error:[/red] Failed to fetch fleet summary.")
+        raise typer.Exit(code=1)
+
+    text = (
+        f"[bold]Total agents:[/bold]  {summary.get('total_agents', 0)}\n"
+        f"[green]Active:[/green]        {summary.get('active_agents', 0)}\n"
+        f"[yellow]Degraded:[/yellow]      {summary.get('degraded_agents', 0)}\n"
+        f"[red]Offline:[/red]       {summary.get('offline_agents', 0)}\n"
+        f"[bold]Total detections:[/bold] {summary.get('total_detections', 0)}\n"
+        f"[bold]Avg readiness:[/bold]   {summary.get('avg_readiness_score', 0) * 100:.1f}%"
+    )
+    console.print(Panel(text, title=f"Fleet Status — {central_url}", border_style="cyan"))
+
+
+# ---------------------------------------------------------------------------
+# odcp collector list
+# ---------------------------------------------------------------------------
+@collector_app.command("list")
+def collector_list(
+    central_url: str = typer.Option(
+        ..., "--central-url", "-u", help="Central ODCP server URL."
+    ),
+    api_token: Optional[str] = typer.Option(
+        None, "--token", help="API token for server authentication."
+    ),
+    status: Optional[str] = typer.Option(
+        None, "--status", "-s", help="Filter by status (active, degraded, offline)."
+    ),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write agents JSON to file."),
+) -> None:
+    """List all registered collector agents from the central server."""
+    from odcp.collector.push_client import PushClient
+
+    client = PushClient(central_url, agent_id="cli", api_token=api_token)
+    agents = client.get_agent_list()
+
+    if agents is None:
+        console.print(f"[red]Error:[/red] Cannot reach server at {central_url}")
+        raise typer.Exit(code=1)
+
+    if status:
+        agents = [a for a in agents if a.get("status") == status]
+
+    if output:
+        output.write_text(json.dumps(agents, indent=2, default=str), encoding="utf-8")
+        console.print(f"[green]{len(agents)} agent(s) written to {output}[/green]")
+        return
+
+    if not agents:
+        console.print("[dim]No agents found.[/dim]")
+        return
+
+    table = Table(title=f"Collector Agents — {central_url}")
+    table.add_column("Agent ID", style="cyan")
+    table.add_column("Environment")
+    table.add_column("Platform")
+    table.add_column("Status")
+    table.add_column("Detections", justify="right")
+    table.add_column("Readiness", justify="right")
+    table.add_column("Last Seen")
+
+    status_styles = {"active": "green", "degraded": "yellow", "offline": "red"}
+    for a in agents:
+        st = a.get("status", "unknown")
+        st_colored = f"[{status_styles.get(st, '')}]{st}[/{status_styles.get(st, '')}]" if status_styles.get(st) else st
+        score = a.get("readiness_score", 0) * 100
+        last_seen = (a.get("last_seen") or "never")[:19].replace("T", " ")
+        table.add_row(
+            a.get("agent_id", ""),
+            a.get("environment_name", ""),
+            a.get("platform", ""),
+            st_colored,
+            str(a.get("total_detections", 0)),
+            f"{score:.0f}%",
+            last_seen,
+        )
+
+    console.print(table)
 
 
 if __name__ == "__main__":
