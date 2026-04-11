@@ -27,38 +27,30 @@ ODCP solves this by providing the **structured, machine-readable foundation** an
 ODCP implements a continuous automation loop — from local scanning to fleet-wide visibility to AI-driven decision making:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          ODCP AI SOC Architecture                            │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐     │
-│  │                         AI Consumers                                │     │
-│  │   Claude · GPT · Open-Source Agents · SOAR · CI/CD · Dashboards    │     │
-│  └─────────────────────────────┬───────────────────────────────────────┘     │
-│                                │ tool calls / JSON / SSE                     │
-│  ┌─────────────────────────────▼───────────────────────────────────────┐     │
-│  │                       ODCP Central Server                           │     │
-│  │                                                                     │     │
-│  │   Web Dashboard (dark-theme)  ·  REST API  ·  AI Agent Chat        │     │
-│  │   Fleet Management UI  ·  Server-Sent Events (live refresh)        │     │
-│  │                                                                     │     │
-│  │   ┌─────────────┐  ┌──────────────┐  ┌────────────────────────┐   │     │
-│  │   │ AI Agent    │  │ Fleet        │  │ Automation Loop        │   │     │
-│  │   │ Tool Layer  │  │ Registry     │  │ scan→inventory→drift   │   │     │
-│  │   │ 15 tools    │  │ (all agents) │  │ →feedback→cycle        │   │     │
-│  │   └─────────────┘  └──────────────┘  └────────────────────────┘   │     │
-│  └────────────────────────────────────────────────────────────────────┘     │
-│                                │                                             │
-│                   ┌────────────┴────────────┐                               │
-│                   │                         │                               │
-│  ┌────────────────▼───────┐   ┌─────────────▼──────────────────────────┐   │
-│  │ Remote Collector Agents│   │   Local CLI / Library                  │   │
-│  │                        │   │                                        │   │
-│  │  scan → push           │   │  odcp scan · odcp report · odcp graph  │   │
-│  │  heartbeat             │   │  odcp ci · odcp validate · odcp serve  │   │
-│  │  Splunk/Sigma/Elastic  │   │  odcp agent · odcp ai-soc cycle        │   │
-│  │  Sentinel/Chronicle    │   │                                        │   │
-│  └────────────────────────┘   └────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────────┘
+           ┌──────────────────────────────────────┐
+           │            AI Consumers              │
+           │  Claude · GPT · SOAR · CI/CD · APIs  │
+           └──────────────────┬───────────────────┘
+                              │
+                    tool calls / JSON / SSE
+                              │
+           ┌──────────────────▼───────────────────┐
+           │        ODCP Central Server           │
+           │                                      │
+           │  · Web Dashboard  (7 pages)          │
+           │  · Fleet Registry & API              │
+           │  · AI Agent layer  (15 LLM tools)    │
+           │  · REST API · Server-Sent Events     │
+           └──────────────────┬───────────────────┘
+                   ┌──────────┴──────────┐
+                   │                     │
+        ┌──────────▼──────┐   ┌──────────▼──────────────┐
+        │ Collector Agents│   │   Local CLI / Library   │
+        │                 │   │                         │
+        │ scan → push     │   │ odcp scan · report      │
+        │ heartbeat       │   │ odcp ci · validate      │
+        │ 5 platforms     │   │ odcp serve · agent      │
+        └─────────────────┘   └─────────────────────────┘
 ```
 
 ---
