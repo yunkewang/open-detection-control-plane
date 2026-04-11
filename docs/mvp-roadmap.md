@@ -404,3 +404,165 @@ registry = AgentRegistry()
 app = create_app(registry=registry)
 ```
 
+---
+
+## Phase 12: Multi-Tenant API, Authentication, and Role-Based Access Control — Planned
+
+**Goal:** Harden ODCP for multi-team and SaaS deployments by adding proper authentication, authorization, and tenant isolation so multiple organizations or teams can share a single ODCP server without data leakage.
+
+### Planned Deliverables
+
+- **JWT / API key authentication** — Bearer token auth on all API routes; token issuance and rotation endpoint; `ODCP_API_TOKEN` env var for agents and CLI
+- **Role-based access control** — `admin`, `analyst`, `readonly`, `agent` roles; role enforcement on per-resource operations (agents can only push to their own `agent_id`; analysts can read but not delete)
+- **Multi-tenancy** — Tenant namespace on all registry and report storage; tenant-scoped API keys; cross-tenant isolation enforced at the store layer
+- **Auth middleware** — FastAPI dependency for all protected routes; clear 401/403 responses with `WWW-Authenticate` header
+- **User management API** — `POST /api/auth/tokens`, `DELETE /api/auth/tokens/{id}`, `GET /api/auth/me`
+- **Audit log** — Append-only log of authentication events, report pushes, config changes; structured JSON with actor, action, resource, timestamp
+- **CLI auth support** — `--token` flag and `ODCP_API_TOKEN` env var threading through all CLI commands and collector agent
+
+### Architecture Notes
+
+```
+odcp/server/auth.py        JWTAuth, ApiKeyAuth, require_role() FastAPI dependency
+odcp/models/auth.py        TokenPayload, AuditEvent, UserRole
+odcp/server/audit.py       AuditLogger — append-only structured log writer
+```
+
+---
+
+## Phase 13: Detection Lifecycle Management and Git-Native Workflows — Planned
+
+**Goal:** Give detection engineers a first-class lifecycle management system where every rule change is tracked, reviewable, and reversible — with native integration into Git-based collaboration workflows.
+
+### Planned Deliverables
+
+- **Detection lifecycle states** — Formal state machine: `draft → review → testing → production → deprecated`; state transition validation with role guards (only `senior_analyst` can promote to `production`)
+- **Version history** — Per-detection change history stored alongside reports; diff computation between any two versions; `odcp detection history <id>` CLI command
+- **Git integration** — `odcp detection commit` wraps `git add/commit` for detection files; `odcp detection pr` opens a GitHub/GitLab PR with ODCP scan summary as PR body; pre-receive hook that blocks merges when readiness score drops below policy
+- **Detection scaffolding** — `odcp detection new --platform sigma --technique T1055` generates a rule template with correct metadata, lifecycle state, and MITRE tags pre-filled
+- **Approval workflows** — Configurable approval chains (e.g., `draft → [review: 1 approver] → testing → [review: 2 approvers] → production`); review request notifications
+- **Rollback** — `odcp detection rollback <id> --to <version>` restores a previous version and opens a PR; automatic rollback trigger on CI regression
+
+### CLI Additions
+
+```bash
+odcp detection new    --platform sigma --technique T1055 --name "Proc Injection"
+odcp detection status <id>           # current lifecycle state + history
+odcp detection promote <id>          # advance to next state (role-gated)
+odcp detection rollback <id> --to 3  # restore version 3
+odcp detection pr                    # open PR with ODCP scan summary
+```
+
+---
+
+## Phase 14: Threat Intelligence Integration and Active Gap Analysis — Planned
+
+**Goal:** Connect ODCP's detection coverage model to live threat intelligence feeds so detection engineers can prioritize based on active campaigns rather than static ATT&CK coverage percentages.
+
+### Planned Deliverables
+
+- **STIX/TAXII 2.1 feed ingestion** — Subscribe to MISP, OpenCTI, ISAC feeds; parse attack-pattern, campaign, and indicator objects; map to ODCP detections via MITRE technique IDs
+- **Active campaign coverage scoring** — Weight coverage scores by campaign activity: a technique actively used by a tracked threat actor scores higher than a theoretical gap
+- **IOC-to-detection gap analysis** — Given a set of IOCs (hashes, IPs, domains), identify which ODCP detections would have fired, which wouldn't, and why; produces an `IocCoverageReport`
+- **Threat-prioritized remediation** — Reorder `OptimizationSummary.top_remediations` by current threat relevance; surface "fix this dependency and you'd detect APT29's current campaign"
+- **Intel feed management CLI** — `odcp intel add-feed`, `odcp intel sync`, `odcp intel gap-analysis`
+- **Integration connectors** — VirusTotal (hash/domain context), MISP (event-based), OpenCTI (GraphQL), AlienVault OTX (pulse feed)
+
+### Data Models
+
+```python
+class ThreatCampaign(BaseModel):
+    name: str
+    actor: str
+    techniques: list[str]          # T-IDs
+    confidence: float
+    last_seen: datetime
+
+class IocCoverageReport(BaseModel):
+    ioc: str
+    ioc_type: str                  # hash, ip, domain
+    relevant_techniques: list[str]
+    covered_by: list[str]          # detection IDs
+    gaps: list[str]                # technique IDs with no coverage
+    risk_score: float
+```
+
+---
+
+## Phase 15: Autonomous Detection Engineering — Planned
+
+**Goal:** Close the loop from gap identification to rule creation by letting AI agents draft new detection rules, test them in a staging environment, and open pull requests — all with human approval gates.
+
+### Planned Deliverables
+
+- **AI rule generation** — Given a MITRE technique and available data sources, an AI agent drafts a platform-appropriate detection rule (Sigma preferred for portability); uses Claude with ODCP's source catalog as context to ensure the generated rule matches available data
+- **Rule quality scoring** — Automated quality score for generated rules: specificity, false-positive surface area, data source coverage, MITRE alignment; human-readable feedback with suggested improvements
+- **Staging validation** — Generated rules are scanned through ODCP before any PR is opened; only rules that achieve `readiness_score >= 0.8` in the target environment are promoted
+- **Automated PR workflow** — `odcp agent generate-detection --technique T1055 --platform sigma` generates a rule, validates it, and opens a PR with ODCP scan summary, quality score, and AI rationale as the PR body; waits for human approval before merging
+- **Feedback loop** — Generated rules feed back into the AI SOC cycle; accepted rules update coverage; rejected rules train the generator (via preference data)
+- **Tuning automation** — For existing noisy/degraded rules, agent drafts an updated version with tighter filter conditions; presents diff to engineer; opens PR on approval
+
+### CLI Additions
+
+```bash
+odcp agent generate-detection \
+  --technique T1055 \
+  --platform sigma \
+  --environment prod-siem-report.json \
+  --open-pr
+
+odcp agent tune-detection <id> \
+  --reason "too noisy" \
+  --open-pr
+```
+
+---
+
+## Phase 16: Enterprise Observability, Alerting, and Compliance Reporting — Planned
+
+**Goal:** Make ODCP a first-class enterprise component by exposing metrics, integrating with incident management tools, and producing compliance-grade reporting.
+
+### Planned Deliverables
+
+- **Prometheus / OpenTelemetry metrics** — Expose `/metrics` endpoint with gauges and counters: `odcp_detections_total`, `odcp_readiness_score`, `odcp_blocked_detections`, `odcp_agents_active`, `odcp_drift_events_total`; OTLP exporter for Grafana Cloud / Datadog / Honeycomb
+- **Alerting integrations** — PagerDuty incidents on critical drift events (data source removal affecting >10 detections); Slack/Teams webhooks for readiness score drops, new blockers, and agent offline events; configurable thresholds and routing
+- **SLA tracking** — Per-detection SLA: maximum allowed time in `blocked` state; SLA breach findings with escalation path; `odcp sla status` command showing at-risk detections
+- **Compliance reports** — Pre-built report templates for SOC 2 Type II (detection coverage + change management), NIST CSF (identify/protect/detect functions), and custom frameworks; PDF/HTML output from `odcp compliance report --framework soc2`
+- **Audit log API** — `GET /api/audit?from=&to=&actor=&action=` with pagination; exportable as JSONL or CSV for SIEM ingestion
+- **Health checks and SLOs** — `/health/live`, `/health/ready` endpoints for Kubernetes probes; configurable SLOs for report freshness and agent fleet coverage percentage
+
+### CLI Additions
+
+```bash
+odcp serve --metrics-port 9090       # Expose Prometheus metrics endpoint
+
+odcp compliance report \
+  --framework soc2 \
+  --period 2024-Q4 \
+  --output compliance-report.pdf
+
+odcp sla status --central-url http://odcp-server:8080
+```
+
+---
+
+## Summary Roadmap
+
+| Phase | Focus | Status | Tests |
+|-------|-------|--------|-------|
+| 1 | Splunk static readiness analysis | **Complete** | — |
+| 2 | Splunk runtime signals and health | **Complete** | 97 |
+| 3 | MITRE ATT&CK coverage and optimization | **Complete** | 156 |
+| 4 | Multi-vendor adapters (Sigma, Elastic, Sentinel) | **Complete** | 209 |
+| 5 | Sigma correlations/filters, STIX, OCSF, Splunk Cloud CI | **Complete** | 287 |
+| 6 | Chronicle YARA-L, cross-platform view, migration | **Complete** | 391 |
+| 7 | CI/CD integration and Detection-as-Code | **Complete** | 452 |
+| 8 | AI SOC automation loop | **Complete** | 527 |
+| 9 | AI agent integration (LLM tools + agentic orchestration) | **Complete** | 559 |
+| 10 | Web dashboard and real-time SSE UI | **Complete** | 559 |
+| 11 | Distributed collection agents and fleet management | **Complete** | 646 |
+| 12 | Multi-tenant API, auth, and RBAC | **Planned** | — |
+| 13 | Detection lifecycle management + Git workflows | **Planned** | — |
+| 14 | Threat intelligence integration + active gap analysis | **Planned** | — |
+| 15 | Autonomous detection engineering (AI rule generation + PR) | **Planned** | — |
+| 16 | Enterprise observability, alerting, compliance reporting | **Planned** | — |
