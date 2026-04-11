@@ -1,5 +1,12 @@
 """ODCP data models."""
 
+from odcp.models.auth import (
+    AuditEvent,
+    TokenCreateRequest,
+    TokenPublic,
+    TokenRecord,
+    UserRole,
+)
 from odcp.models.ai_soc import (
     AiSocPrototypeSummary,
     AutomationActionItem,
@@ -76,6 +83,11 @@ from odcp.models.source_catalog import (
 )
 
 __all__ = [
+    "AuditEvent",
+    "TokenCreateRequest",
+    "TokenPublic",
+    "TokenRecord",
+    "UserRole",
     "AgentConfig",
     "AgentHeartbeat",
     "AgentInfo",

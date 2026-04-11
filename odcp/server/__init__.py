@@ -17,6 +17,8 @@ Requires the ``server`` extra::
 """
 
 from odcp.server.app import create_app
+from odcp.server.audit import AuditLogger
+from odcp.server.auth import TokenStore
 from odcp.server.state import ReportStore
 
-__all__ = ["create_app", "ReportStore"]
+__all__ = ["create_app", "AuditLogger", "ReportStore", "TokenStore"]
