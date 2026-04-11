@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Fleet — ODCP Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+  .agent-status-active   { color: var(--green); }
+  .agent-status-degraded { color: var(--yellow); }
+  .agent-status-offline  { color: var(--red); }
+  .agent-status-unknown  { color: var(--muted); }
+
+  .fleet-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 16px; margin-bottom: 24px; }
+
+  .progress-wrap { display: flex; align-items: center; gap: 8px; }
+  .progress-bar  { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; background: var(--green); }
+
+  .refresh-note { font-size: 11px; color: var(--muted); margin-left: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set active   = summary.active_agents %}
+{% set degraded = summary.degraded_agents %}
+{% set offline  = summary.offline_agents %}
+{% set total    = summary.total_agents %}
+{% set avg_score = summary.avg_readiness_score | round(1) %}
+
+<div class="fleet-kpis">
+  <div class="card">
+    <div class="card-label">Total agents</div>
+    <div class="card-value text-blue">{{ total }}</div>
+    <div class="card-sub">registered</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Active</div>
+    <div class="card-value text-green">{{ active }}</div>
+    <div class="card-sub">reporting normally</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Degraded</div>
+    <div class="card-value {% if degraded > 0 %}text-yellow{% else %}text-muted{% endif %}">{{ degraded }}</div>
+    <div class="card-sub">scan errors</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Offline</div>
+    <div class="card-value {% if offline > 0 %}text-red{% else %}text-muted{% endif %}">{{ offline }}</div>
+    <div class="card-sub">no heartbeat</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Total detections</div>
+    <div class="card-value text-blue">{{ summary.total_detections }}</div>
+    <div class="card-sub">across all agents</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Avg readiness</div>
+    <div class="card-value {% if avg_score >= 70 %}text-green{% elif avg_score >= 40 %}text-yellow{% else %}text-red{% endif %}">
+      {{ avg_score }}%
+    </div>
+    <div class="card-sub">fleet average</div>
+  </div>
+</div>
+
+{% if agents %}
+<div class="panel">
+  <div class="panel-header">
+    <span>Collector Agents</span>
+    <span class="refresh-note">Auto-refreshes every 30 s</span>
+  </div>
+  <div class="panel-body" style="padding: 0;">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Agent ID</th>
+            <th>Environment</th>
+            <th>Platform</th>
+            <th>Host</th>
+            <th>Status</th>
+            <th>Detections</th>
+            <th>Readiness</th>
+            <th>Last Seen</th>
+            <th>Tags</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for agent in agents %}
+          {% set status = agent.status %}
+          <tr>
+            <td style="font-family: monospace; font-size: 12px; color: var(--accent);">
+              {{ agent.agent_id }}
+            </td>
+            <td>{{ agent.environment_name }}</td>
+            <td>
+              <span class="badge badge-info">{{ agent.platform }}</span>
+            </td>
+            <td style="font-size: 12px; color: var(--muted);">{{ agent.hostname }}</td>
+            <td>
+              <span class="badge badge-{{ status }}">{{ status }}</span>
+            </td>
+            <td style="text-align: right;">{{ agent.total_detections }}</td>
+            <td>
+              {% set score = (agent.readiness_score * 100) | int %}
+              <div class="progress-wrap">
+                <div class="progress-bar">
+                  <div class="progress-fill"
+                       style="width: {{ score }}%; background: {% if score >= 70 %}var(--green){% elif score >= 40 %}var(--yellow){% else %}var(--red){% endif %};">
+                  </div>
+                </div>
+                <span style="font-size: 12px; min-width: 36px; text-align: right;">{{ score }}%</span>
+              </div>
+            </td>
+            <td style="font-size: 12px; color: var(--muted);">
+              {% if agent.last_seen %}
+                {{ agent.last_seen[:19] | replace("T", " ") }}
+              {% else %}
+                <span style="color: var(--red);">never</span>
+              {% endif %}
+            </td>
+            <td style="font-size: 11px;">
+              {% for tag in agent.tags[:3] %}
+                <span class="badge badge-info" style="margin-right: 2px;">{{ tag }}</span>
+              {% endfor %}
+              {% if agent.tags | length > 3 %}
+                <span style="color: var(--muted);">+{{ agent.tags | length - 3 }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="empty">
+  <p style="font-size: 24px; margin-bottom: 8px;">⬡</p>
+  <p>No collector agents registered yet.</p>
+  <p style="margin-top: 8px; font-size: 12px;">
+    Deploy a collector agent to start receiving remote scan data:
+  </p>
+  <pre style="margin-top: 12px; background: var(--surface2); padding: 12px; border-radius: 6px; text-align: left; display: inline-block; font-size: 12px; color: var(--text);">odcp collector start \
+  --platform splunk \
+  --scan-path /opt/splunk/etc/apps/security \
+  --central-url http://this-server:8080 \
+  --environment "Production SIEM"</pre>
+</div>
+{% endif %}
+
+{% if agents %}
+<div class="panel" style="margin-top: 20px;">
+  <div class="panel-header">Quick Start — Deploy a Collector</div>
+  <div class="panel-body">
+    <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
+      Install ODCP on any host with access to a security platform and register it with this server:
+    </p>
+    <pre style="background: var(--surface2); padding: 14px; border-radius: 6px; font-size: 12px; color: var(--text); overflow-x: auto;">pip install odcp
+
+odcp collector start \
+  --platform &lt;splunk|sigma|elastic|sentinel|chronicle&gt; \
+  --scan-path /path/to/detections \
+  --central-url http://{{ request.headers.get('host', 'this-server') }} \
+  --environment "My Environment" \
+  --interval 300</pre>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Auto-refresh fleet page every 30 seconds
+  setTimeout(() => window.location.reload(), 30000);
+</script>
+{% endblock %}
