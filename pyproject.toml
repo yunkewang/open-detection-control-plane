@@ -38,6 +38,12 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
 ]
+agent = [
+    "anthropic>=0.40,<2.0",
+]
+all = [
+    "anthropic>=0.40,<2.0",
+]
 
 [project.scripts]
 odcp = "odcp.cli.main:app"

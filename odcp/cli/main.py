@@ -28,6 +28,9 @@ app.add_typer(scan_app, name="scan")
 soc_app = typer.Typer(help="AI SOC automation workflows.")
 app.add_typer(soc_app, name="ai-soc")
 
+agent_app = typer.Typer(help="AI agent integration — LLM-callable tools and agentic queries.")
+app.add_typer(agent_app, name="agent")
+
 console = Console()
 
 
@@ -1652,6 +1655,141 @@ def _print_cycle_result(result) -> None:
             title="Priority Actions",
             border_style="red",
         ))
+
+
+# ---------------------------------------------------------------------------
+# odcp agent tools
+# ---------------------------------------------------------------------------
+@agent_app.command("tools")
+def agent_tools(
+    fmt: str = typer.Option(
+        "table",
+        "--format",
+        "-f",
+        help="Output format: table (default) or json.",
+    ),
+) -> None:
+    """List all LLM-callable ODCP tools with descriptions."""
+    from odcp.agent.tools import TOOL_REGISTRY
+
+    if fmt == "json":
+        import json as _json
+        from odcp.agent.tools import get_tool_schemas
+        print(_json.dumps(get_tool_schemas("anthropic"), indent=2))
+        return
+
+    table = Table(title="ODCP Agent Tools", show_header=True)
+    table.add_column("Tool", style="bold cyan", min_width=30)
+    table.add_column("Description")
+    for tool in TOOL_REGISTRY.values():
+        desc = tool.description
+        if len(desc) > 90:
+            desc = desc[:87] + "..."
+        table.add_row(tool.name, desc)
+    console.print(table)
+    console.print(
+        f"\n[dim]{len(TOOL_REGISTRY)} tools available. "
+        "Use [bold]odcp agent schema[/bold] to export JSON schemas for LLM consumption.[/dim]"
+    )
+
+
+# ---------------------------------------------------------------------------
+# odcp agent schema
+# ---------------------------------------------------------------------------
+@agent_app.command("schema")
+def agent_schema(
+    fmt: str = typer.Option(
+        "anthropic",
+        "--fmt",
+        help="Schema format: anthropic (default) or openai.",
+    ),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write schema to file."),
+) -> None:
+    """Export tool schemas in Anthropic or OpenAI format for LLM consumption."""
+    import json as _json
+    from odcp.agent.tools import get_tool_schemas
+
+    schemas = get_tool_schemas(fmt=fmt)
+    text = _json.dumps(schemas, indent=2)
+
+    if output:
+        output.write_text(text)
+        console.print(f"[green]Schema written to {output}[/green] ({len(schemas)} tools, {fmt} format)")
+    else:
+        print(text)
+
+
+# ---------------------------------------------------------------------------
+# odcp agent run  "<prompt>"
+# ---------------------------------------------------------------------------
+@agent_app.command("run")
+def agent_run(
+    prompt: str = typer.Argument(..., help="Natural-language question or instruction."),
+    report: Optional[Path] = typer.Option(
+        None, "--report", "-r", help="Path to scan report JSON file."
+    ),
+    model: str = typer.Option(
+        "claude-opus-4-6", "--model", "-m", help="Claude model ID."
+    ),
+    api_key: Optional[str] = typer.Option(
+        None, "--api-key", help="Anthropic API key (defaults to ANTHROPIC_API_KEY env var)."
+    ),
+    max_turns: int = typer.Option(10, "--max-turns", help="Maximum agentic turns."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Print tool call details."),
+) -> None:
+    """Run a one-shot AI agent query against a scan report.
+
+    Requires the 'anthropic' package: pip install 'odcp[agent]'
+
+    Example:
+
+        odcp agent run "Which detections are blocked?" --report scan.json
+    """
+    from odcp.agent.orchestrator import run_agent
+
+    answer = run_agent(
+        prompt,
+        report_path=str(report) if report else None,
+        model=model,
+        api_key=api_key,
+        max_turns=max_turns,
+        verbose=verbose,
+    )
+    console.print(Panel(answer, title="Agent Response", border_style="cyan"))
+
+
+# ---------------------------------------------------------------------------
+# odcp agent chat
+# ---------------------------------------------------------------------------
+@agent_app.command("chat")
+def agent_chat(
+    report: Optional[Path] = typer.Option(
+        None, "--report", "-r", help="Path to scan report JSON file (pre-loaded)."
+    ),
+    model: str = typer.Option(
+        "claude-opus-4-6", "--model", "-m", help="Claude model ID."
+    ),
+    api_key: Optional[str] = typer.Option(
+        None, "--api-key", help="Anthropic API key (defaults to ANTHROPIC_API_KEY env var)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Print tool call details."),
+) -> None:
+    """Start an interactive AI agent chat session.
+
+    Requires the 'anthropic' package: pip install 'odcp[agent]'
+
+    Example:
+
+        odcp agent chat --report scan.json
+    """
+    from odcp.agent.orchestrator import interactive_session
+
+    interactive_session(
+        report_path=str(report) if report else None,
+        model=model,
+        api_key=api_key,
+        verbose=verbose,
+    )
 
 
 if __name__ == "__main__":

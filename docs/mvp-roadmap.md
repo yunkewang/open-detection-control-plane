@@ -203,3 +203,58 @@
 - `odcp ai-soc drift <baseline> <current>` — Detect environment drift between two reports
 - `odcp ai-soc feedback <report>` — Analyze detection outcomes and propose tuning actions
 - `odcp ai-soc cycle <report> [--baseline <baseline>]` — Run a full AI SOC automation cycle
+
+---
+
+## Phase 9: AI Agent Integration Layer — Complete
+
+**Goal:** Expose all ODCP capabilities as LLM-callable tools with a structured JSON-Schema interface, and provide an agentic orchestration loop powered by Claude that can answer natural-language questions about detection posture without custom scripting.
+
+### Delivered
+
+- **LLM-callable tool registry** (`odcp/agent/tools.py`) — 15 tools covering the full ODCP capability surface: `load_report`, `load_baseline`, `get_detection_posture`, `list_detections`, `get_detection_detail`, `get_findings`, `get_coverage_gaps`, `get_dependency_issues`, `get_runtime_health`, `get_tuning_proposals`, `run_ai_soc_cycle`, `get_optimization_recommendations`, `get_data_sources`, `compare_reports`, `explain_detection`. Each tool has a JSON-Schema `input_schema` compatible with both Anthropic tool-use and OpenAI function-calling formats.
+- **Tool executor** (`odcp/agent/executor.py`) — `ToolExecutor` dispatches LLM tool-call requests (Anthropic or OpenAI format) to Python implementations; wraps all errors into JSON-serialisable `{"error": "..."}` dicts so the LLM can recover gracefully.
+- **Agent session** (`odcp/agent/session.py`) — `AgentSession` holds mutable context across tool calls: loaded report, optional baseline for drift comparison, and an in-session scratch cache for computed results.
+- **Agentic orchestrator** (`odcp/agent/orchestrator.py`) — Multi-turn Claude tool-use loop (`run_agent` for one-shot queries; `interactive_session` for real-time terminal chat). Uses `claude-opus-4-6` by default; LLM-agnostic tool interface allows substitution. Ships with a SOC-analyst system prompt that routes queries to the right tools.
+- **Schema export** — `get_tool_schemas(fmt="anthropic"|"openai")` returns all tool schemas as a list suitable for passing directly into an LLM API call.
+- **Optional dependency** — `anthropic` SDK gated under `pip install 'odcp[agent]'`; core tools work without it (Python API only).
+- CLI commands: `odcp agent tools`, `odcp agent schema`, `odcp agent run`, `odcp agent chat`
+- Unit and integration tests for all Phase 9 components (527 tests total)
+
+### Architecture
+
+```
+odcp/agent/
+├── __init__.py        exports AgentSession, ToolExecutor, TOOL_REGISTRY, get_tool_schemas
+├── session.py         AgentSession — report + baseline state
+├── tools.py           15 tool definitions (JSON schema + implementation)
+├── executor.py        ToolExecutor — dispatches Anthropic/OpenAI tool-call blocks
+└── orchestrator.py    run_agent(), interactive_session() — Claude tool-use loop
+```
+
+### CLI Additions
+
+- `odcp agent tools` — List all tools with descriptions (table or JSON output)
+- `odcp agent schema [--fmt anthropic|openai]` — Export tool schemas for LLM consumption
+- `odcp agent run "<prompt>" [--report <path>]` — One-shot agent query
+- `odcp agent chat [--report <path>]` — Interactive SOC analyst chat session
+
+### Python API Example
+
+```python
+from odcp.agent import AgentSession, ToolExecutor, get_tool_schemas
+
+# Direct tool use (no LLM needed)
+session = AgentSession()
+executor = ToolExecutor(session)
+executor.execute("load_report", {"path": "report.json"})
+posture = executor.execute("get_detection_posture", {})
+
+# Export schemas for any LLM
+anthropic_tools = get_tool_schemas("anthropic")   # → pass to client.messages.create(tools=...)
+openai_tools    = get_tool_schemas("openai")      # → pass to openai.chat.completions.create(tools=...)
+
+# Agentic one-shot (requires pip install odcp[agent])
+from odcp.agent.orchestrator import run_agent
+answer = run_agent("Which detections are blocked and why?", report_path="report.json")
+```
