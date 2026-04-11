@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from odcp.server.auth import analyst_or_above, reader_or_above
 from odcp.server.state import ReportStore
 
 logger = logging.getLogger(__name__)
@@ -148,7 +149,10 @@ async def agent_page(
 
 
 @api_router.get("/posture")
-async def api_posture(store: ReportStore = Depends(get_store)) -> JSONResponse:
+async def api_posture(
+    store: ReportStore = Depends(get_store),
+    _auth=Depends(reader_or_above()),
+) -> JSONResponse:
     if not store.loaded:
         raise HTTPException(status_code=404, detail="No report loaded")
     return JSONResponse(store.posture_dict())
@@ -160,6 +164,7 @@ async def api_detections(
     status: Optional[str] = None,
     severity: Optional[str] = None,
     limit: int = 200,
+    _auth=Depends(reader_or_above()),
 ) -> JSONResponse:
     if not store.loaded:
         raise HTTPException(status_code=404, detail="No report loaded")
@@ -173,6 +178,7 @@ async def api_findings(
     severity: Optional[str] = None,
     category: Optional[str] = None,
     limit: int = 200,
+    _auth=Depends(reader_or_above()),
 ) -> JSONResponse:
     if not store.loaded:
         raise HTTPException(status_code=404, detail="No report loaded")
@@ -181,14 +187,20 @@ async def api_findings(
 
 
 @api_router.get("/coverage")
-async def api_coverage(store: ReportStore = Depends(get_store)) -> JSONResponse:
+async def api_coverage(
+    store: ReportStore = Depends(get_store),
+    _auth=Depends(reader_or_above()),
+) -> JSONResponse:
     if not store.loaded:
         raise HTTPException(status_code=404, detail="No report loaded")
     return JSONResponse(_build_coverage(store))
 
 
 @api_router.get("/sources")
-async def api_sources(store: ReportStore = Depends(get_store)) -> JSONResponse:
+async def api_sources(
+    store: ReportStore = Depends(get_store),
+    _auth=Depends(reader_or_above()),
+) -> JSONResponse:
     if not store.loaded:
         raise HTTPException(status_code=404, detail="No report loaded")
     return JSONResponse(_build_sources(store))
@@ -198,6 +210,7 @@ async def api_sources(store: ReportStore = Depends(get_store)) -> JSONResponse:
 async def api_load_report(
     payload: dict[str, Any],
     store: ReportStore = Depends(get_store),
+    _auth=Depends(analyst_or_above()),
 ) -> JSONResponse:
     path = payload.get("path", "")
     if not path:
@@ -215,6 +228,7 @@ async def api_load_report(
 async def api_agent_query(
     payload: dict[str, Any],
     store: ReportStore = Depends(get_store),
+    _auth=Depends(analyst_or_above()),
 ) -> JSONResponse:
     """Run a one-shot agent query (requires anthropic installed)."""
     prompt = payload.get("prompt", "").strip()
@@ -246,7 +260,7 @@ async def api_agent_query(
 
 
 @api_router.get("/agent/tools")
-async def api_agent_tools() -> JSONResponse:
+async def api_agent_tools(_auth=Depends(reader_or_above())) -> JSONResponse:
     from odcp.agent.tools import get_tool_schemas
     return JSONResponse(get_tool_schemas("anthropic"))
 

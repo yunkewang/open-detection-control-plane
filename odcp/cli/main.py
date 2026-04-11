@@ -34,6 +34,9 @@ app.add_typer(agent_app, name="agent")
 collector_app = typer.Typer(help="Distributed collector agents — deploy and manage remote scanners.")
 app.add_typer(collector_app, name="collector")
 
+auth_app = typer.Typer(help="API token management and audit log (requires --auth server).")
+app.add_typer(auth_app, name="auth")
+
 console = Console()
 
 
@@ -1812,6 +1815,14 @@ def serve(
     ),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev mode)."),
     open_browser: bool = typer.Option(False, "--open", "-o", help="Open browser on startup."),
+    auth: bool = typer.Option(
+        False, "--auth",
+        help="Enable API token authentication (RBAC). Prints a bootstrap admin token on first start.",
+    ),
+    audit_log: Optional[Path] = typer.Option(
+        None, "--audit-log",
+        help="Path to append audit events as JSONL (only used when --auth is enabled).",
+    ),
 ) -> None:
     """Start the ODCP web dashboard.
 
@@ -1820,6 +1831,7 @@ def serve(
     Example:
 
         odcp serve report.json --port 8080
+        odcp serve report.json --auth --audit-log audit.jsonl
     """
     try:
         import uvicorn  # type: ignore[import]
@@ -1831,21 +1843,44 @@ def serve(
         raise typer.Exit(code=1)
 
     from odcp.server.app import create_app
+    from odcp.server.audit import AuditLogger
+    from odcp.server.auth import TokenStore
     from odcp.server.state import ReportStore
+    from odcp.models.auth import UserRole
 
     report_path = str(report) if report else None
     store = ReportStore(report_path, poll_interval=poll_interval)
-    app_instance = create_app(store)
+
+    token_store = TokenStore(auth_enabled=auth)
+    audit_logger = AuditLogger(log_path=audit_log)
+
+    bootstrap_token: Optional[str] = None
+    if auth:
+        plain, _record = token_store.create(
+            name="bootstrap-admin", role=UserRole.admin
+        )
+        bootstrap_token = plain
+
+    app_instance = create_app(
+        store,
+        token_store=token_store,
+        audit_logger=audit_logger,
+    )
 
     url = f"http://{host}:{port}"
-    console.print(Panel(
+    status_lines = (
         f"[bold]ODCP Dashboard[/bold]\n"
-        f"[dim]URL:[/dim]     [cyan]{url}[/cyan]\n"
-        f"[dim]Report:[/dim]  {report_path or 'none (load via /api/report/load)'}\n"
-        f"[dim]API docs:[/dim] {url}/api/docs",
-        border_style="cyan",
-        title="Starting server",
-    ))
+        f"[dim]URL:[/dim]      [cyan]{url}[/cyan]\n"
+        f"[dim]Report:[/dim]   {report_path or 'none (load via /api/report/load)'}\n"
+        f"[dim]API docs:[/dim] {url}/api/docs\n"
+        f"[dim]Auth:[/dim]     {'[green]enabled[/green]' if auth else '[dim]disabled[/dim]'}"
+    )
+    if bootstrap_token:
+        status_lines += (
+            f"\n\n[bold yellow]Bootstrap admin token (save now — shown once):[/bold yellow]\n"
+            f"[bold]{bootstrap_token}[/bold]"
+        )
+    console.print(Panel(status_lines, border_style="cyan", title="Starting server"))
 
     if open_browser:
         import threading
@@ -2057,6 +2092,173 @@ def collector_list(
             last_seen,
         )
 
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# odcp auth  — token management via the central server REST API
+# ---------------------------------------------------------------------------
+
+def _auth_request(
+    method: str,
+    central_url: str,
+    path: str,
+    token: Optional[str],
+    body: Optional[dict] = None,
+) -> dict:
+    """Make an HTTP request to the central server auth API."""
+    import urllib.request
+    url = central_url.rstrip("/") + path
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except Exception as exc:
+        console.print(f"[red]Request failed:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+
+@auth_app.command("create-token")
+def auth_create_token(
+    name: str = typer.Option(..., "--name", "-n", help="Human-readable token name."),
+    role: str = typer.Option("readonly", "--role", "-r", help="Role: admin, analyst, readonly, agent."),
+    agent_id: Optional[str] = typer.Option(None, "--agent-id", help="Bind token to a specific agent ID."),
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    admin_token: str = typer.Option(..., "--token", "-t", help="Admin API token."),
+) -> None:
+    """Create a new API token on the central server (admin only).
+
+    The plain token is printed once and never stored — save it immediately.
+    """
+    result = _auth_request(
+        "POST", central_url, "/api/auth/tokens", admin_token,
+        body={"name": name, "role": role, "agent_id": agent_id},
+    )
+    console.print(Panel(
+        f"[bold yellow]{result.get('token', '')}[/bold yellow]\n\n"
+        f"[dim]Token ID:[/dim] {result.get('token_id')}\n"
+        f"[dim]Name:[/dim]     {result.get('name')}\n"
+        f"[dim]Role:[/dim]     {result.get('role')}\n"
+        f"[dim]Warning:[/dim]  {result.get('warning', '')}",
+        border_style="yellow",
+        title="New API Token",
+    ))
+
+
+@auth_app.command("list-tokens")
+def auth_list_tokens(
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    admin_token: str = typer.Option(..., "--token", "-t", help="Admin API token."),
+) -> None:
+    """List all API tokens on the central server (admin only)."""
+    result = _auth_request("GET", central_url, "/api/auth/tokens", admin_token)
+    tokens = result.get("tokens", [])
+    table = Table(title=f"API Tokens ({len(tokens)} total)")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Role")
+    table.add_column("Agent ID")
+    table.add_column("Created")
+    table.add_column("Last Used")
+    for t in tokens:
+        created = (t.get("created_at") or "")[:19].replace("T", " ")
+        last_used = (t.get("last_used_at") or "never")[:19].replace("T", " ")
+        role_color = {"admin": "red", "analyst": "yellow", "readonly": "dim", "agent": "cyan"}.get(t.get("role", ""), "")
+        role_str = f"[{role_color}]{t.get('role', '')}[/{role_color}]" if role_color else t.get("role", "")
+        table.add_row(
+            t.get("token_id", ""),
+            t.get("name", ""),
+            role_str,
+            t.get("agent_id") or "—",
+            created,
+            last_used,
+        )
+    console.print(table)
+
+
+@auth_app.command("revoke-token")
+def auth_revoke_token(
+    token_id: str = typer.Argument(..., help="Token ID to revoke."),
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    admin_token: str = typer.Option(..., "--token", "-t", help="Admin API token."),
+) -> None:
+    """Revoke an API token on the central server (admin only)."""
+    result = _auth_request("DELETE", central_url, f"/api/auth/tokens/{token_id}", admin_token)
+    if result.get("revoked"):
+        console.print(f"[green]Revoked token:[/green] {token_id}")
+    else:
+        console.print(f"[red]Failed to revoke token:[/red] {token_id}")
+        raise typer.Exit(code=1)
+
+
+@auth_app.command("whoami")
+def auth_whoami(
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: str = typer.Option(..., "--token", "-t", help="API token to inspect."),
+) -> None:
+    """Show identity information for an API token."""
+    result = _auth_request("GET", central_url, "/api/auth/me", token)
+    if not result.get("auth_enabled"):
+        console.print("[dim]Authentication is disabled on this server.[/dim]")
+        return
+    role_color = {"admin": "red", "analyst": "yellow", "readonly": "dim", "agent": "cyan"}.get(result.get("role", ""), "")
+    role_str = f"[{role_color}]{result.get('role', '')}[/{role_color}]" if role_color else result.get("role", "")
+    console.print(Panel(
+        f"[dim]Token ID:[/dim]  {result.get('token_id')}\n"
+        f"[dim]Name:[/dim]      {result.get('name')}\n"
+        f"[dim]Role:[/dim]      {role_str}\n"
+        f"[dim]Agent ID:[/dim]  {result.get('agent_id') or '—'}\n"
+        f"[dim]Created:[/dim]   {(result.get('created_at') or '')[:19].replace('T', ' ')}\n"
+        f"[dim]Last used:[/dim] {(result.get('last_used_at') or 'never')[:19].replace('T', ' ')}",
+        border_style="cyan",
+        title="Token Info",
+    ))
+
+
+@auth_app.command("audit")
+def auth_audit(
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: str = typer.Option(..., "--token", "-t", help="Admin or analyst API token."),
+    limit: int = typer.Option(50, "--limit", "-n", help="Number of events to show."),
+    action: Optional[str] = typer.Option(None, "--action", help="Filter by action substring."),
+    actor: Optional[str] = typer.Option(None, "--actor", help="Filter by actor name."),
+    status: Optional[str] = typer.Option(None, "--status", help="Filter by status (success|denied)."),
+) -> None:
+    """Show the audit log from the central server (admin or analyst)."""
+    params = f"?limit={limit}"
+    if action:
+        params += f"&action={action}"
+    if actor:
+        params += f"&actor={actor}"
+    if status:
+        params += f"&status={status}"
+    result = _auth_request("GET", central_url, f"/api/auth/audit{params}", token)
+    events = result.get("events", [])
+    table = Table(title=f"Audit Log ({result.get('returned', 0)} of {result.get('total_in_memory', 0)})")
+    table.add_column("Time")
+    table.add_column("Actor")
+    table.add_column("Role")
+    table.add_column("Action")
+    table.add_column("Resource")
+    table.add_column("Status")
+    table.add_column("IP")
+    for e in events:
+        ts = (e.get("timestamp") or "")[:19].replace("T", " ")
+        st = e.get("status", "")
+        st_colored = f"[green]{st}[/green]" if st == "success" else f"[red]{st}[/red]"
+        table.add_row(
+            ts,
+            e.get("actor", ""),
+            e.get("actor_role") or "—",
+            e.get("action", ""),
+            e.get("resource", ""),
+            st_colored,
+            e.get("ip_address") or "—",
+        )
     console.print(table)
 
 

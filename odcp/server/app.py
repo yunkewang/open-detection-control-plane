@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from odcp.collector.registry import AgentRegistry
 from odcp.server.state import ReportStore
+
+logger = logging.getLogger(__name__)
 
 
 def _require_fastapi():
@@ -25,6 +28,8 @@ def _require_fastapi():
 def create_app(
     store: Optional[ReportStore] = None,
     registry: Optional[AgentRegistry] = None,
+    token_store=None,    # Optional[TokenStore] — avoid hard import for tests
+    audit_logger=None,   # Optional[AuditLogger]
 ) -> "fastapi.FastAPI":  # type: ignore[name-defined]  # noqa: F821
     """Create and return the FastAPI application.
 
@@ -36,12 +41,21 @@ def create_app(
     registry:
         A pre-configured :class:`~odcp.collector.registry.AgentRegistry`.
         If ``None``, a fresh in-memory registry is created.
+    token_store:
+        A pre-configured :class:`~odcp.server.auth.TokenStore`.  If
+        ``None``, auth is **disabled** (open access, safe for dev/testing).
+    audit_logger:
+        A pre-configured :class:`~odcp.server.audit.AuditLogger`.  If
+        ``None``, a memory-only logger is created.
     """
     _require_fastapi()
 
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
+    from odcp.server.audit import AuditLogger
+    from odcp.server.auth import TokenStore
+    from odcp.server.auth_routes import auth_router
     from odcp.server.fleet_routes import fleet_api_router, fleet_ui_router
     from odcp.server.routes import api_router, ui_router
 
@@ -49,6 +63,10 @@ def create_app(
         store = ReportStore()
     if registry is None:
         registry = AgentRegistry()
+    if token_store is None:
+        token_store = TokenStore(auth_enabled=False)
+    if audit_logger is None:
+        audit_logger = AuditLogger()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -74,13 +92,16 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # Attach store and registry immediately (not waiting for lifespan)
+    # Attach all server-side state immediately (before lifespan)
     app.state.store = store
     app.state.agent_registry = registry
+    app.state.token_store = token_store
+    app.state.audit_logger = audit_logger
 
     app.include_router(ui_router)
     app.include_router(api_router)
     app.include_router(fleet_ui_router)
     app.include_router(fleet_api_router)
+    app.include_router(auth_router)
 
     return app
