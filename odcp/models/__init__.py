@@ -7,6 +7,12 @@ from odcp.models.auth import (
     TokenRecord,
     UserRole,
 )
+from odcp.models.lifecycle import (
+    DetectionLifecycle,
+    DetectionState,
+    LifecycleEvent,
+    LifecycleSummary,
+)
 from odcp.models.ai_soc import (
     AiSocPrototypeSummary,
     AutomationActionItem,
@@ -88,6 +94,10 @@ __all__ = [
     "TokenPublic",
     "TokenRecord",
     "UserRole",
+    "DetectionLifecycle",
+    "DetectionState",
+    "LifecycleEvent",
+    "LifecycleSummary",
     "AgentConfig",
     "AgentHeartbeat",
     "AgentInfo",

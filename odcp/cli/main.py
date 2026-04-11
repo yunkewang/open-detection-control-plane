@@ -37,6 +37,9 @@ app.add_typer(collector_app, name="collector")
 auth_app = typer.Typer(help="API token management and audit log (requires --auth server).")
 app.add_typer(auth_app, name="auth")
 
+detection_app = typer.Typer(help="Detection lifecycle management — track state from draft to production.")
+app.add_typer(detection_app, name="detection")
+
 console = Console()
 
 
@@ -1823,6 +1826,10 @@ def serve(
         None, "--audit-log",
         help="Path to append audit events as JSONL (only used when --auth is enabled).",
     ),
+    lifecycle_db: Optional[Path] = typer.Option(
+        None, "--lifecycle-db",
+        help="Path to persist detection lifecycle state as JSON (default: in-memory only).",
+    ),
 ) -> None:
     """Start the ODCP web dashboard.
 
@@ -1842,11 +1849,12 @@ def serve(
         )
         raise typer.Exit(code=1)
 
+    from odcp.lifecycle.manager import LifecycleManager
+    from odcp.models.auth import UserRole
     from odcp.server.app import create_app
     from odcp.server.audit import AuditLogger
     from odcp.server.auth import TokenStore
     from odcp.server.state import ReportStore
-    from odcp.models.auth import UserRole
 
     report_path = str(report) if report else None
     store = ReportStore(report_path, poll_interval=poll_interval)
@@ -1861,10 +1869,13 @@ def serve(
         )
         bootstrap_token = plain
 
+    lm = LifecycleManager(persist_path=lifecycle_db)
+
     app_instance = create_app(
         store,
         token_store=token_store,
         audit_logger=audit_logger,
+        lifecycle_manager=lm,
     )
 
     url = f"http://{host}:{port}"
@@ -1873,7 +1884,8 @@ def serve(
         f"[dim]URL:[/dim]      [cyan]{url}[/cyan]\n"
         f"[dim]Report:[/dim]   {report_path or 'none (load via /api/report/load)'}\n"
         f"[dim]API docs:[/dim] {url}/api/docs\n"
-        f"[dim]Auth:[/dim]     {'[green]enabled[/green]' if auth else '[dim]disabled[/dim]'}"
+        f"[dim]Auth:[/dim]     {'[green]enabled[/green]' if auth else '[dim]disabled[/dim]'}\n"
+        f"[dim]Lifecycle:[/dim] {str(lifecycle_db) if lifecycle_db else '[dim]in-memory[/dim]'}"
     )
     if bootstrap_token:
         status_lines += (
@@ -2259,6 +2271,197 @@ def auth_audit(
             st_colored,
             e.get("ip_address") or "—",
         )
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# odcp detection  — lifecycle management via central server REST API
+# ---------------------------------------------------------------------------
+
+def _lc_request(
+    method: str,
+    central_url: str,
+    path: str,
+    token: Optional[str],
+    body: Optional[dict] = None,
+) -> dict:
+    """Make an HTTP request to the lifecycle API."""
+    import urllib.request
+    url = central_url.rstrip("/") + path
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except Exception as exc:
+        console.print(f"[red]Request failed:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+
+_STATE_COLORS = {
+    "draft":      "dim",
+    "review":     "yellow",
+    "testing":    "cyan",
+    "production": "green",
+    "deprecated": "red",
+}
+
+
+def _state_str(s: str) -> str:
+    c = _STATE_COLORS.get(s, "")
+    return f"[{c}]{s}[/{c}]" if c else s
+
+
+@detection_app.command("list")
+def detection_list(
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="API token (if auth enabled)."),
+    state: Optional[str] = typer.Option(None, "--state", "-s", help="Filter by state: draft, review, testing, production, deprecated."),
+) -> None:
+    """List all tracked detections with their lifecycle state."""
+    path = "/api/lifecycle/detections"
+    if state:
+        path += f"?state={state}"
+    result = _lc_request("GET", central_url, path, token)
+    detections = result.get("detections", [])
+
+    table = Table(title=f"Detection Lifecycle ({result.get('total', 0)} total)")
+    table.add_column("Detection ID", style="dim")
+    table.add_column("Name")
+    table.add_column("State")
+    table.add_column("Events", justify="right")
+    table.add_column("Updated")
+
+    for d in detections:
+        updated = (d.get("updated_at") or "")[:19].replace("T", " ")
+        table.add_row(
+            d.get("detection_id", "")[:24],
+            d.get("detection_name", ""),
+            _state_str(d.get("current_state", "")),
+            str(len(d.get("history", []))),
+            updated,
+        )
+    console.print(table)
+
+
+@detection_app.command("status")
+def detection_status(
+    detection_id: str = typer.Argument(..., help="Detection ID to inspect."),
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="API token (if auth enabled)."),
+) -> None:
+    """Show the full lifecycle history for a detection."""
+    result = _lc_request("GET", central_url, f"/api/lifecycle/detections/{detection_id}", token)
+    console.print(Panel(
+        f"[dim]Detection:[/dim]  {result.get('detection_name', '')}  [dim]({result.get('detection_id', '')})[/dim]\n"
+        f"[dim]State:[/dim]      {_state_str(result.get('current_state', ''))}\n"
+        f"[dim]Created:[/dim]    {(result.get('created_at') or '')[:19].replace('T', ' ')}\n"
+        f"[dim]Updated:[/dim]    {(result.get('updated_at') or '')[:19].replace('T', ' ')}",
+        border_style="cyan",
+        title="Detection Lifecycle",
+    ))
+
+    history = result.get("history", [])
+    if history:
+        table = Table(title="History (newest first)")
+        table.add_column("Time")
+        table.add_column("Actor")
+        table.add_column("Transition")
+        table.add_column("Comment")
+        for ev in reversed(history):
+            ts = (ev.get("timestamp") or "")[:19].replace("T", " ")
+            from_s = ev.get("from_state") or "—"
+            to_s = ev.get("to_state", "")
+            table.add_row(
+                ts,
+                ev.get("actor", ""),
+                f"{_state_str(from_s)} → {_state_str(to_s)}",
+                ev.get("comment") or "",
+            )
+        console.print(table)
+
+
+@detection_app.command("promote")
+def detection_promote(
+    detection_id: str = typer.Argument(..., help="Detection ID to promote."),
+    comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Reason for promotion."),
+    actor: str = typer.Option("cli-user", "--actor", "-a", help="Name of the actor making this change."),
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="API token (if auth enabled)."),
+) -> None:
+    """Advance a detection to the next lifecycle state."""
+    result = _lc_request(
+        "POST", central_url,
+        f"/api/lifecycle/detections/{detection_id}/promote",
+        token,
+        body={"actor": actor, "comment": comment},
+    )
+    new_state = result.get("current_state", "")
+    console.print(f"[green]Promoted[/green] {detection_id[:24]} → {_state_str(new_state)}")
+
+
+@detection_app.command("rollback")
+def detection_rollback(
+    detection_id: str = typer.Argument(..., help="Detection ID to roll back."),
+    comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Reason for rollback."),
+    actor: str = typer.Option("cli-user", "--actor", "-a", help="Name of the actor making this change."),
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="API token (if auth enabled)."),
+) -> None:
+    """Roll a detection back to its previous lifecycle state."""
+    result = _lc_request(
+        "POST", central_url,
+        f"/api/lifecycle/detections/{detection_id}/rollback",
+        token,
+        body={"actor": actor, "comment": comment},
+    )
+    new_state = result.get("current_state", "")
+    console.print(f"[yellow]Rolled back[/yellow] {detection_id[:24]} → {_state_str(new_state)}")
+
+
+@detection_app.command("transition")
+def detection_transition(
+    detection_id: str = typer.Argument(..., help="Detection ID."),
+    to_state: str = typer.Argument(..., help="Target state: draft, review, testing, production, deprecated."),
+    comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Reason for transition."),
+    actor: str = typer.Option("cli-user", "--actor", "-a", help="Name of the actor making this change."),
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="API token (if auth enabled)."),
+) -> None:
+    """Transition a detection to an explicit target state."""
+    result = _lc_request(
+        "POST", central_url,
+        f"/api/lifecycle/detections/{detection_id}/transition",
+        token,
+        body={"to_state": to_state, "actor": actor, "comment": comment},
+    )
+    new_state = result.get("current_state", "")
+    console.print(f"[cyan]Transitioned[/cyan] {detection_id[:24]} → {_state_str(new_state)}")
+
+
+@detection_app.command("summary")
+def detection_summary(
+    central_url: str = typer.Option("http://127.0.0.1:8080", "--url", "-u", help="Central server URL."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="API token (if auth enabled)."),
+) -> None:
+    """Show a summary of detections by lifecycle state."""
+    result = _lc_request("GET", central_url, "/api/lifecycle/summary", token)
+    by_state = result.get("by_state", {})
+    total = result.get("total", 0)
+
+    table = Table(title=f"Lifecycle Summary ({total} total)")
+    table.add_column("State")
+    table.add_column("Count", justify="right")
+    table.add_column("Bar")
+
+    for state in ["draft", "review", "testing", "production", "deprecated"]:
+        cnt = by_state.get(state, 0)
+        bar = "█" * min(cnt, 30) if cnt else ""
+        table.add_row(_state_str(state), str(cnt), bar)
+
     console.print(table)
 
 
