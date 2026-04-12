@@ -22,3 +22,6 @@ from odcp.server.auth import TokenStore
 from odcp.server.state import ReportStore
 
 __all__ = ["create_app", "AuditLogger", "ReportStore", "TokenStore"]
+
+# LifecycleManager lives in odcp.lifecycle, not odcp.server, but is
+# wired into the server via create_app(lifecycle_manager=...).

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Lifecycle — ODCP Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* State badge colours */
+  .state-draft       { background: rgba(139,148,158,.15); color: #8b949e; }
+  .state-review      { background: rgba(210,153,34,.15);  color: #d29922; }
+  .state-testing     { background: rgba(88,166,255,.15);  color: #58a6ff; }
+  .state-production  { background: rgba(63,185,80,.15);   color: #3fb950; }
+  .state-deprecated  { background: rgba(248,81,73,.15);   color: #f85149; }
+
+  /* Pipeline funnel */
+  .pipeline { display: flex; gap: 0; margin-bottom: 28px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .pipeline-step {
+    flex: 1; padding: 14px 12px; text-align: center;
+    border-right: 1px solid var(--border); background: var(--surface);
+    transition: background .15s;
+  }
+  .pipeline-step:last-child { border-right: none; }
+  .pipeline-step.has-items { background: var(--surface2); }
+  .pipeline-label { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 4px; }
+  .pipeline-count { font-size: 26px; font-weight: 700; line-height: 1; }
+  .pipeline-arrow { display: flex; align-items: center; color: var(--border); font-size: 18px; padding: 0 4px; }
+
+  /* Action buttons */
+  .btn-promote  { background: rgba(63,185,80,.12);  color: #3fb950; border-color: rgba(63,185,80,.3);  padding: 3px 10px; font-size: 11px; }
+  .btn-rollback { background: rgba(210,153,34,.12); color: #d29922; border-color: rgba(210,153,34,.3); padding: 3px 10px; font-size: 11px; }
+  .btn-promote:hover  { background: rgba(63,185,80,.25);  color: #3fb950; }
+  .btn-rollback:hover { background: rgba(210,153,34,.25); color: #d29922; }
+
+  .action-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* History panel */
+  .history-list { list-style: none; position: relative; padding-left: 20px; }
+  .history-list::before { content: ''; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .history-item { position: relative; margin-bottom: 12px; font-size: 12px; }
+  .history-item::before {
+    content: ''; position: absolute; left: -16px; top: 4px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--bg);
+  }
+  .history-ts { color: var(--muted); font-size: 11px; }
+  .history-actor { color: var(--accent); }
+  .history-arrow { color: var(--muted); margin: 0 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Pipeline funnel ─────────────────────────────────────────── #}
+<div class="pipeline">
+  {% set state_labels = [('draft','✏ Draft'),('review','🔍 Review'),('testing','🧪 Testing'),('production','✅ Production'),('deprecated','🗄 Deprecated')] %}
+  {% for sval, slabel in state_labels %}
+    {% set cnt = summary.by_state.get(sval, 0) %}
+    <div class="pipeline-step {% if cnt > 0 %}has-items{% endif %}">
+      <div class="pipeline-label">{{ slabel }}</div>
+      <div class="pipeline-count state-{{ sval }}" style="color: inherit;">{{ cnt }}</div>
+    </div>
+    {% if not loop.last %}
+    <div class="pipeline-arrow">›</div>
+    {% endif %}
+  {% endfor %}
+</div>
+
+{# ── Filter bar ──────────────────────────────────────────────── #}
+<form method="get" class="filter-bar">
+  <label>State</label>
+  <select name="state" onchange="this.form.submit()">
+    <option value="">All states</option>
+    {% for s in states %}
+    <option value="{{ s }}" {% if state_filter == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  {% if state_filter %}
+  <a href="/lifecycle" class="btn">Clear</a>
+  {% endif %}
+  <span style="margin-left:auto; font-size:11px; color:var(--muted);">{{ records|length }} detection{{ 's' if records|length != 1 else '' }}</span>
+</form>
+
+{# ── Detection table ─────────────────────────────────────────── #}
+{% if records %}
+<div class="panel">
+  <div class="panel-header">
+    Detections
+    <span style="font-size:11px;color:var(--muted);">Click a row to expand history</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Detection</th>
+          <th>State</th>
+          <th>Updated</th>
+          <th>Events</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr id="row-{{ r.detection_id }}" style="cursor:pointer" onclick="toggleHistory('{{ r.detection_id }}')">
+          <td>
+            <div style="font-weight:500;">{{ r.detection_name }}</div>
+            <div style="font-size:11px;color:var(--muted);">{{ r.detection_id[:20] }}…</div>
+          </td>
+          <td>
+            <span class="badge state-{{ r.current_state }}">{{ r.icon }} {{ r.current_state }}</span>
+          </td>
+          <td style="font-size:12px;color:var(--muted);">
+            {{ r.updated_at[:19].replace('T',' ') if r.updated_at else '—' }}
+          </td>
+          <td style="font-size:12px;">{{ r.history|length }}</td>
+          <td class="action-cell" onclick="event.stopPropagation()">
+            {% if r.can_promote %}
+            <button class="btn btn-promote"
+              onclick="doAction('{{ r.detection_id }}', 'promote')"
+              title="Promote to {{ r.next_state }}">▲ {{ r.next_state }}</button>
+            {% endif %}
+            {% if r.can_rollback %}
+            <button class="btn btn-rollback"
+              onclick="doAction('{{ r.detection_id }}', 'rollback')"
+              title="Rollback to {{ r.prev_state }}">▼ {{ r.prev_state }}</button>
+            {% endif %}
+          </td>
+        </tr>
+        {# Collapsible history row #}
+        <tr id="hist-{{ r.detection_id }}" style="display:none;">
+          <td colspan="5" style="background:var(--surface2); padding: 16px 20px;">
+            <div style="font-size:12px; font-weight:600; margin-bottom:10px; color:var(--muted);">History</div>
+            <ul class="history-list">
+              {% for ev in r.history|reverse %}
+              <li class="history-item">
+                <span class="history-ts">{{ ev.timestamp[:19].replace('T',' ') }}</span>
+                <span class="history-actor"> {{ ev.actor }}</span>
+                <span class="history-arrow">—</span>
+                {% if ev.from_state %}
+                <span class="badge state-{{ ev.from_state }}" style="font-size:10px;">{{ ev.from_state }}</span>
+                <span class="history-arrow">→</span>
+                {% endif %}
+                <span class="badge state-{{ ev.to_state }}" style="font-size:10px;">{{ ev.to_state }}</span>
+                {% if ev.comment %}
+                <span style="color:var(--muted); margin-left:6px;">"{{ ev.comment }}"</span>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="empty">
+  <div style="font-size:32px; margin-bottom:12px;">↻</div>
+  <div>No detections tracked yet.</div>
+  <div style="margin-top:8px; font-size:12px;">
+    Load a report from the dashboard — detections are registered automatically.
+  </div>
+</div>
+{% endif %}
+
+{# ── Toast notification ──────────────────────────────────────── #}
+<div id="toast" style="
+  position:fixed; bottom:24px; right:24px; background:var(--surface2);
+  border:1px solid var(--border); border-radius:8px; padding:12px 18px;
+  font-size:13px; display:none; z-index:9999; max-width:320px;
+"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleHistory(id) {
+  const row = document.getElementById('hist-' + id);
+  row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+
+async function doAction(detectionId, action) {
+  const comment = prompt(`Comment for ${action} (optional):`, '') ;
+  if (comment === null) return; // cancelled
+  try {
+    const resp = await fetch(`/api/lifecycle/detections/${encodeURIComponent(detectionId)}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: comment || undefined, actor: 'ui-user' }),
+    });
+    if (resp.ok) {
+      showToast(`✓ ${action} successful — reloading…`, '#3fb950');
+      setTimeout(() => location.reload(), 800);
+    } else {
+      const err = await resp.json();
+      showToast(`✗ ${err.detail || 'Request failed'}`, '#f85149');
+    }
+  } catch (e) {
+    showToast(`✗ Network error: ${e.message}`, '#f85149');
+  }
+}
+
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.color = color;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
+}
+</script>
+{% endblock %}

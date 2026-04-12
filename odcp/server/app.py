@@ -28,8 +28,10 @@ def _require_fastapi():
 def create_app(
     store: Optional[ReportStore] = None,
     registry: Optional[AgentRegistry] = None,
-    token_store=None,    # Optional[TokenStore] — avoid hard import for tests
-    audit_logger=None,   # Optional[AuditLogger]
+    token_store=None,       # Optional[TokenStore] — avoid hard import for tests
+    audit_logger=None,      # Optional[AuditLogger]
+    lifecycle_manager=None, # Optional[LifecycleManager]
+    intel_manager=None,     # Optional[IntelManager]
 ) -> "fastapi.FastAPI":  # type: ignore[name-defined]  # noqa: F821
     """Create and return the FastAPI application.
 
@@ -47,16 +49,24 @@ def create_app(
     audit_logger:
         A pre-configured :class:`~odcp.server.audit.AuditLogger`.  If
         ``None``, a memory-only logger is created.
+    lifecycle_manager:
+        A pre-configured :class:`~odcp.lifecycle.LifecycleManager`.  If
+        ``None``, a fresh in-memory manager is created.
     """
     _require_fastapi()
 
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
+    from odcp.intel.manager import IntelManager
+    from odcp.lifecycle.manager import LifecycleManager
     from odcp.server.audit import AuditLogger
     from odcp.server.auth import TokenStore
     from odcp.server.auth_routes import auth_router
     from odcp.server.fleet_routes import fleet_api_router, fleet_ui_router
+    from odcp.server.intel_routes import intel_api_router, intel_ui_router
+    from odcp.server.lifecycle_routes import lifecycle_api_router, lifecycle_ui_router
+    from odcp.server.observability_routes import health_router, observability_api_router
     from odcp.server.routes import api_router, ui_router
 
     if store is None:
@@ -67,6 +77,10 @@ def create_app(
         token_store = TokenStore(auth_enabled=False)
     if audit_logger is None:
         audit_logger = AuditLogger()
+    if lifecycle_manager is None:
+        lifecycle_manager = LifecycleManager()
+    if intel_manager is None:
+        intel_manager = IntelManager()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -97,11 +111,19 @@ def create_app(
     app.state.agent_registry = registry
     app.state.token_store = token_store
     app.state.audit_logger = audit_logger
+    app.state.lifecycle_manager = lifecycle_manager
+    app.state.intel_manager = intel_manager
 
     app.include_router(ui_router)
     app.include_router(api_router)
     app.include_router(fleet_ui_router)
     app.include_router(fleet_api_router)
     app.include_router(auth_router)
+    app.include_router(lifecycle_ui_router)
+    app.include_router(lifecycle_api_router)
+    app.include_router(intel_ui_router)
+    app.include_router(intel_api_router)
+    app.include_router(health_router)
+    app.include_router(observability_api_router)
 
     return app
