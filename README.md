@@ -107,6 +107,8 @@ A browser-based SOC dashboard with no build step required:
 - **Data Sources** — health badges, detection count, field count per source
 - **AI Agent Chat** — browser-based chat panel backed by ODCP agent API
 - **Fleet** — live view of all collector agents with status, readiness, and last-seen
+- **Lifecycle** — detection state pipeline funnel, promote/rollback controls, per-detection history
+- **Threat Intel** — campaign gap analysis, IOC management, coverage KPIs
 - Server-Sent Events push: browser reloads automatically when the report file changes on disk
 
 ### 6. Distributed Collection Agents
@@ -118,6 +120,51 @@ Deploy lightweight collector agents on any host with access to a security platfo
 - Thread-safe `AgentRegistry` with asyncio staleness checker marks agents offline automatically
 - Fleet REST API for registration, report ingestion, heartbeats, and deregistration
 - State persistence (save/load) for server restarts
+
+### 7. Authentication, RBAC, and Audit Logging
+
+Opt-in security layer for production deployments:
+
+- Token-based authentication with SHA-256 hashed storage (tokens never stored in plaintext)
+- Four roles: `admin`, `analyst`, `readonly`, `agent` — each with scoped permissions
+- `AuditLogger` with a 10k-event ring buffer and optional JSONL file append
+- `odcp serve --auth` bootstraps an admin token on startup; `odcp auth` subcommands manage tokens
+- Fully opt-in: auth disabled by default so development and CI flows work without configuration
+
+### 8. Detection Lifecycle Management
+
+State-machine-driven promotion workflow from authoring to production:
+
+- States: `draft → review → testing → production → deprecated` with controlled transitions and rollback
+- `LifecycleManager` provides thread-safe state storage with optional JSON persistence (`--lifecycle-db`)
+- Web dashboard page showing pipeline funnel, state-filtered table, and per-detection history
+- `odcp detection` CLI: `list`, `status`, `promote`, `rollback`, `transition`, `summary`
+
+### 9. Threat Intelligence Integration
+
+Map active threat campaigns to detection coverage gaps:
+
+- `IntelManager` stores campaigns, threat actors, IOC entries, and intel feeds with JSON persistence
+- `analyze_coverage()` weights MITRE technique gaps by active campaign activity
+- `/intel` dashboard: pipeline KPIs, gap analysis, campaigns, IOC management
+- `odcp intel` CLI: `campaigns`, `add-campaign`, `add-ioc`, `gap-analysis`
+
+### 10. AI Rule Generator
+
+Claude-powered detection rule authoring:
+
+- `RuleGenerator` calls the Claude API to generate Sigma, Splunk SPL, or KQL rules for a given MITRE technique and environment context
+- `RuleQualityScore` evaluates specificity, false-positive risk, MITRE alignment, and data-source fit — works without an LLM via pure heuristics
+- `POST /api/agent/generate-detection` REST endpoint; `odcp agent generate-detection` CLI
+
+### 11. SLA Tracking and Compliance Reporting
+
+Enterprise observability over the detection program:
+
+- `SlaTracker` evaluates how long detections have spent in each lifecycle state against configurable `SlaPolicy` thresholds
+- `ComplianceReportBuilder` generates SOC 2 and NIST CSF evidence packages (Markdown or JSON)
+- `GET /api/sla/status`, `GET /api/compliance/report` REST endpoints
+- `odcp sla status`, `odcp compliance report` CLI commands
 
 ---
 
@@ -226,6 +273,64 @@ odcp validate sigma_rules/   --platform sigma   --require-mitre
 odcp validate elastic_rules/ --platform elastic --naming-pattern '^[a-z][a-z0-9_]+$'
 ```
 
+### Authentication and access control
+
+```bash
+# Enable auth (prints bootstrap admin token on startup)
+odcp serve report.json --auth --audit-log audit.jsonl
+
+# Create tokens for team members
+odcp auth create-token --name "alice" --role analyst --url http://odcp-server:8080 --token ADMIN_TOKEN
+odcp auth list-tokens  --url http://odcp-server:8080 --token ADMIN_TOKEN
+odcp auth revoke-token TOKEN_ID --url http://odcp-server:8080 --token ADMIN_TOKEN
+
+# Inspect the audit trail
+odcp auth audit --url http://odcp-server:8080 --token ADMIN_TOKEN
+```
+
+### Detection lifecycle management
+
+```bash
+# Promote a detection through the review pipeline
+odcp detection list    --url http://odcp-server:8080
+odcp detection status  det-001 --url http://odcp-server:8080
+odcp detection promote det-001 --url http://odcp-server:8080
+odcp detection rollback det-001 --url http://odcp-server:8080
+odcp detection summary --url http://odcp-server:8080
+
+# Persist lifecycle state across server restarts
+odcp serve report.json --lifecycle-db lifecycle.json
+```
+
+### Threat intelligence
+
+```bash
+# Load active threat campaigns and check detection coverage
+odcp intel add-campaign --name "APT29 Phishing" --techniques T1566,T1078 --active
+odcp intel gap-analysis --url http://odcp-server:8080
+odcp intel add-ioc --type ip --value 1.2.3.4 --campaign "APT29 Phishing"
+odcp intel campaigns --url http://odcp-server:8080
+```
+
+### AI rule generator
+
+```bash
+# Generate a detection rule for a MITRE technique
+odcp agent generate-detection T1059.001 --platform sigma --report report.json
+odcp agent generate-detection T1078     --platform splunk --output new_rule.conf
+```
+
+### SLA tracking and compliance
+
+```bash
+# Check how long detections have been in each lifecycle state
+odcp sla status --url http://odcp-server:8080 --draft 30 --review 14
+
+# Generate a compliance evidence package
+odcp compliance report soc2    --period 2025-Q1 --format markdown --output soc2.md
+odcp compliance report nist_csf --period 2025-Q1 --format json    --output nist.json
+```
+
 ### Cross-platform and migration analysis
 
 ```bash
@@ -331,10 +436,30 @@ odcp/
 │   ├── push_client.py         PushClient — urllib HTTP client (zero extra deps)
 │   └── registry.py            AgentRegistry — thread-safe store + staleness checker
 │
+├── models/auth.py        # UserRole, TokenRecord, AuditEvent (Phase 12)
+├── server/auth.py        # TokenStore, get_current_token, require_role() (Phase 12)
+├── server/audit.py       # AuditLogger — ring buffer + JSONL append (Phase 12)
+│
+├── models/lifecycle.py   # DetectionState, LifecycleEvent, VALID_TRANSITIONS (Phase 13)
+├── lifecycle/
+│   └── manager.py             LifecycleManager — promote/rollback + JSON persistence
+│
+├── models/intel.py       # ThreatCampaign, IocEntry, IntelGapReport (Phase 14)
+├── intel/
+│   └── manager.py             IntelManager — coverage analysis + JSON persistence
+│
+├── agent/rule_generator.py    RuleGenerator + RuleQualityScore (Phase 15)
+│
+├── sla/
+│   └── tracker.py             SlaPolicy + SlaTracker (Phase 16)
+├── compliance/
+│   └── report_builder.py      ComplianceReportBuilder — SOC 2 / NIST CSF (Phase 16)
+│
 ├── core/                 # Dependency graph engine, scoring
 ├── collectors/           # Local data collectors (filesystem, Splunk API)
 ├── reporting/            # JSON, Markdown, HTML report generation
-└── cli/                  # Typer CLI (odcp scan · serve · agent · collector · ai-soc · ci · …)
+└── cli/                  # Typer CLI (odcp scan · serve · agent · collector · ai-soc · ci
+                          #            auth · detection · intel · sla · compliance · …)
 ```
 
 ---
@@ -354,11 +479,11 @@ odcp/
 | 9 | AI agent integration (LLM-callable tools, agentic orchestration) | **Complete** |
 | 10 | Web dashboard and real-time SOC visibility UI | **Complete** |
 | 11 | Distributed collection agents and fleet management | **Complete** |
-| 12 | Multi-tenant API, authentication, and role-based access control | **Planned** |
-| 13 | Detection lifecycle management with Git-native workflows | **Planned** |
-| 14 | Threat intelligence integration and gap analysis | **Planned** |
-| 15 | Autonomous detection engineering (AI-generated rules, auto-PR) | **Planned** |
-| 16 | Enterprise observability, alerting, and compliance reporting | **Planned** |
+| 12 | Multi-tenant API, authentication, and role-based access control | **Complete** |
+| 13 | Detection lifecycle management (state machine, promote/rollback) | **Complete** |
+| 14 | Threat intelligence integration and gap analysis | **Complete** |
+| 15 | AI rule generator (Claude-powered Sigma/Splunk/KQL generation) | **Complete** |
+| 16 | Enterprise observability — SLA tracking and compliance reporting | **Complete** |
 
 See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for full phase details and [docs/architecture.md](docs/architecture.md) for architecture details.
 
@@ -370,7 +495,7 @@ See [docs/mvp-roadmap.md](docs/mvp-roadmap.md) for full phase details and [docs/
 pytest tests/ -v
 ```
 
-646 tests covering unit and integration scenarios across all 11 phases.
+822 tests covering unit and integration scenarios across all 16 phases.
 
 ---
 
