@@ -31,6 +31,7 @@ def create_app(
     token_store=None,       # Optional[TokenStore] — avoid hard import for tests
     audit_logger=None,      # Optional[AuditLogger]
     lifecycle_manager=None, # Optional[LifecycleManager]
+    intel_manager=None,     # Optional[IntelManager]
 ) -> "fastapi.FastAPI":  # type: ignore[name-defined]  # noqa: F821
     """Create and return the FastAPI application.
 
@@ -57,12 +58,15 @@ def create_app(
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
+    from odcp.intel.manager import IntelManager
     from odcp.lifecycle.manager import LifecycleManager
     from odcp.server.audit import AuditLogger
     from odcp.server.auth import TokenStore
     from odcp.server.auth_routes import auth_router
     from odcp.server.fleet_routes import fleet_api_router, fleet_ui_router
+    from odcp.server.intel_routes import intel_api_router, intel_ui_router
     from odcp.server.lifecycle_routes import lifecycle_api_router, lifecycle_ui_router
+    from odcp.server.observability_routes import health_router, observability_api_router
     from odcp.server.routes import api_router, ui_router
 
     if store is None:
@@ -75,6 +79,8 @@ def create_app(
         audit_logger = AuditLogger()
     if lifecycle_manager is None:
         lifecycle_manager = LifecycleManager()
+    if intel_manager is None:
+        intel_manager = IntelManager()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -106,6 +112,7 @@ def create_app(
     app.state.token_store = token_store
     app.state.audit_logger = audit_logger
     app.state.lifecycle_manager = lifecycle_manager
+    app.state.intel_manager = intel_manager
 
     app.include_router(ui_router)
     app.include_router(api_router)
@@ -114,5 +121,9 @@ def create_app(
     app.include_router(auth_router)
     app.include_router(lifecycle_ui_router)
     app.include_router(lifecycle_api_router)
+    app.include_router(intel_ui_router)
+    app.include_router(intel_api_router)
+    app.include_router(health_router)
+    app.include_router(observability_api_router)
 
     return app

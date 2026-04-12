@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+
+{% block title %}Threat Intel — ODCP Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+  .intel-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 16px; margin-bottom: 24px; }
+
+  .priority-critical { color: var(--red); }
+  .priority-high     { color: var(--orange); }
+  .priority-medium   { color: var(--yellow); }
+  .priority-low      { color: var(--muted); }
+
+  .confidence-bar { height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .confidence-fill { height: 100%; border-radius: 2px; }
+
+  .gap-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab { padding: 8px 18px; font-size: 13px; cursor: pointer; color: var(--muted);
+         border-bottom: 2px solid transparent; transition: color .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .threat-score-bar { display: inline-block; height: 6px; width: 60px; background: var(--surface2);
+                      border-radius: 3px; vertical-align: middle; overflow: hidden; margin-left: 6px; }
+  .threat-score-fill { height: 100%; border-radius: 3px; }
+
+  .add-form { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin-bottom: 20px; }
+  .add-form .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .add-form input, .add-form select { background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 12px; flex: 1; min-width: 120px; }
+  .add-form input:focus, .add-form select:focus { outline: none; border-color: var(--accent); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI strip ────────────────────────────────────────────────── #}
+<div class="intel-kpis">
+  <div class="card">
+    <div class="card-label">Active campaigns</div>
+    <div class="card-value text-red">{{ summary.active_campaigns }}</div>
+    <div class="card-sub">of {{ summary.total_campaigns }} tracked</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Tracked techniques</div>
+    <div class="card-value text-yellow">{{ summary.tracked_techniques }}</div>
+    <div class="card-sub">{{ summary.high_confidence_techniques }} high-confidence</div>
+  </div>
+  <div class="card">
+    <div class="card-label">IOCs</div>
+    <div class="card-value text-blue">{{ summary.total_iocs }}</div>
+    <div class="card-sub">across {{ summary.total_feeds }} feeds</div>
+  </div>
+  {% if gap_report %}
+  <div class="card">
+    <div class="card-label">Threat coverage</div>
+    <div class="card-value {% if gap_report.threat_coverage_score >= 0.7 %}text-green{% elif gap_report.threat_coverage_score >= 0.4 %}text-yellow{% else %}text-red{% endif %}">
+      {{ (gap_report.threat_coverage_score * 100) | round | int }}%
+    </div>
+    <div class="card-sub">{{ gap_report.critical_gaps }} critical gaps</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Tabs ─────────────────────────────────────────────────────── #}
+<div class="tab-bar">
+  <div class="tab active" onclick="switchTab(event,'gap')">Gap Analysis</div>
+  <div class="tab" onclick="switchTab(event,'campaigns')">Campaigns</div>
+  <div class="tab" onclick="switchTab(event,'iocs')">IOCs</div>
+  <div class="tab" onclick="switchTab(event,'add')">+ Add Intel</div>
+</div>
+
+{# ── Gap analysis ─────────────────────────────────────────────── #}
+<div id="tab-gap" class="tab-content active">
+  {% if gap_report and gap_report.technique_risks %}
+  <div class="panel">
+    <div class="panel-header">
+      Threat-Weighted Coverage Gaps
+      <span style="font-size:11px;color:var(--muted);">
+        {{ gap_report.covered_techniques }}/{{ gap_report.total_techniques_in_scope }} techniques covered
+      </span>
+    </div>
+    <div class="table-wrap">
+      <table class="gap-table">
+        <thead>
+          <tr>
+            <th>Technique</th>
+            <th>Priority</th>
+            <th>Campaigns</th>
+            <th>Threat Score</th>
+            <th>Covered</th>
+            <th>Detections</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in gap_report.technique_risks %}
+          <tr>
+            <td>
+              <span style="font-family:monospace;font-size:12px;">{{ r.technique_id }}</span>
+              {% if r.technique_name %}
+              <div style="font-size:11px;color:var(--muted);">{{ r.technique_name }}</div>
+              {% endif %}
+            </td>
+            <td><span class="priority-{{ r.priority }}" style="font-weight:600;font-size:12px;">● {{ r.priority }}</span></td>
+            <td style="font-size:12px;">{{ r.active_campaign_count }}</td>
+            <td>
+              <span style="font-size:12px;">{{ (r.threat_score * 100) | round | int }}%</span>
+              <span class="threat-score-bar">
+                <span class="threat-score-fill" style="width:{{ (r.threat_score * 100) | round | int }}%;
+                  background:{% if r.threat_score >= 0.7 %}var(--red){% elif r.threat_score >= 0.4 %}var(--yellow){% else %}var(--muted){% endif %};"></span>
+              </span>
+            </td>
+            <td>
+              {% if r.covered %}
+              <span style="color:var(--green);">✓</span>
+              {% else %}
+              <span style="color:var(--red);">✗ gap</span>
+              {% endif %}
+            </td>
+            <td style="font-size:11px;color:var(--muted);">{{ r.detection_ids|length }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% elif gap_report %}
+  <div class="empty">
+    <div style="font-size:32px;margin-bottom:12px;">✓</div>
+    <div>No active-threat coverage gaps found.</div>
+    <div style="margin-top:8px;font-size:12px;">All tracked campaign techniques are covered by runnable detections.</div>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div style="font-size:32px;margin-bottom:12px;">📡</div>
+    <div>No gap analysis available.</div>
+    <div style="margin-top:8px;font-size:12px;">Load a scan report and add threat campaigns to see threat-weighted coverage gaps.</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Campaigns ────────────────────────────────────────────────── #}
+<div id="tab-campaigns" class="tab-content">
+  {% if campaigns %}
+  <div class="panel">
+    <div class="panel-header">Threat Campaigns ({{ campaigns|length }})</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Actor</th>
+            <th>Techniques</th>
+            <th>Confidence</th>
+            <th>Status</th>
+            <th>Last Seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in campaigns %}
+          <tr>
+            <td>
+              <div style="font-weight:500;">{{ c.name }}</div>
+              {% if c.description %}
+              <div style="font-size:11px;color:var(--muted);">{{ c.description[:80] }}</div>
+              {% endif %}
+            </td>
+            <td style="font-size:12px;">{{ c.actor or '—' }}</td>
+            <td>
+              {% for t in c.techniques[:4] %}
+              <span class="badge badge-info" style="font-family:monospace;margin-right:3px;">{{ t }}</span>
+              {% endfor %}
+              {% if c.techniques|length > 4 %}
+              <span style="font-size:11px;color:var(--muted);">+{{ c.techniques|length - 4 }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span style="font-size:12px;">{{ (c.confidence * 100)|round|int }}%</span>
+              <div class="confidence-bar" style="width:60px;display:inline-block;vertical-align:middle;margin-left:6px;">
+                <div class="confidence-fill" style="width:{{ (c.confidence*100)|round|int }}%;
+                  background:{% if c.confidence>=0.7 %}var(--red){% elif c.confidence>=0.4 %}var(--yellow){% else %}var(--muted){% endif %};"></div>
+              </div>
+            </td>
+            <td>
+              {% if c.active %}
+              <span class="badge badge-runnable">active</span>
+              {% else %}
+              <span class="badge badge-unknown">inactive</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12px;color:var(--muted);">
+              {{ (c.last_seen or '')[:10] or '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty">No campaigns tracked yet. Use the "Add Intel" tab to add campaigns.</div>
+  {% endif %}
+</div>
+
+{# ── IOCs ─────────────────────────────────────────────────────── #}
+<div id="tab-iocs" class="tab-content">
+  {% if iocs %}
+  <div class="panel">
+    <div class="panel-header">Indicators of Compromise (showing {{ iocs|length }})</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Value</th>
+            <th>Type</th>
+            <th>Techniques</th>
+            <th>Confidence</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ioc in iocs %}
+          <tr>
+            <td style="font-family:monospace;font-size:12px;">{{ ioc.value[:60] }}</td>
+            <td><span class="badge badge-info">{{ ioc.ioc_type }}</span></td>
+            <td>
+              {% for t in ioc.related_techniques[:3] %}
+              <span class="badge badge-info" style="font-family:monospace;margin-right:2px;font-size:10px;">{{ t }}</span>
+              {% endfor %}
+            </td>
+            <td style="font-size:12px;">{{ (ioc.confidence * 100)|round|int }}%</td>
+            <td style="font-size:12px;color:var(--muted);">{{ ioc.source_feed }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty">No IOCs loaded yet. Use the "Add Intel" tab or POST to /api/intel/iocs/bulk.</div>
+  {% endif %}
+</div>
+
+{# ── Add intel form ────────────────────────────────────────────── #}
+<div id="tab-add" class="tab-content">
+  <div class="add-form">
+    <div class="section-title" style="margin-bottom:14px;">Add Threat Campaign</div>
+    <div class="form-row">
+      <input type="text" id="camp-name" placeholder="Campaign name (e.g. APT29 SolarWinds)" />
+      <input type="text" id="camp-actor" placeholder="Actor (e.g. APT29)" />
+    </div>
+    <div class="form-row">
+      <input type="text" id="camp-techniques" placeholder="Techniques comma-separated (e.g. T1195,T1078,T1059)" />
+      <input type="number" id="camp-confidence" placeholder="Confidence 0–1 (e.g. 0.8)" step="0.1" min="0" max="1" value="0.7" style="max-width:120px;" />
+    </div>
+    <div class="form-row">
+      <input type="text" id="camp-description" placeholder="Description (optional)" />
+    </div>
+    <button class="btn btn-primary" onclick="addCampaign()">Add Campaign</button>
+  </div>
+
+  <div class="add-form">
+    <div class="section-title" style="margin-bottom:14px;">Add IOC</div>
+    <div class="form-row">
+      <input type="text" id="ioc-value" placeholder="IOC value (hash, IP, domain, URL…)" />
+      <select id="ioc-type">
+        <option value="hash_sha256">SHA-256 hash</option>
+        <option value="hash_md5">MD5 hash</option>
+        <option value="ip">IP address</option>
+        <option value="domain">Domain</option>
+        <option value="url">URL</option>
+        <option value="email">Email</option>
+        <option value="file_path">File path</option>
+        <option value="registry_key">Registry key</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <input type="text" id="ioc-techniques" placeholder="Related techniques comma-separated (e.g. T1566)" />
+      <input type="number" id="ioc-confidence" placeholder="Confidence 0–1" step="0.1" min="0" max="1" value="0.7" style="max-width:120px;" />
+    </div>
+    <button class="btn btn-primary" onclick="addIoc()">Add IOC</button>
+  </div>
+</div>
+
+<div id="toast" style="position:fixed;bottom:24px;right:24px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:8px;padding:12px 18px;font-size:13px;
+  display:none;z-index:9999;max-width:320px;"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function switchTab(evt, id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  evt.target.classList.add('active');
+  document.getElementById('tab-' + id).classList.add('active');
+}
+
+async function addCampaign() {
+  const name = document.getElementById('camp-name').value.trim();
+  const actor = document.getElementById('camp-actor').value.trim();
+  const techs = document.getElementById('camp-techniques').value.split(',').map(t=>t.trim()).filter(Boolean);
+  const conf = parseFloat(document.getElementById('camp-confidence').value) || 0.7;
+  const desc = document.getElementById('camp-description').value.trim();
+  if (!name) { showToast('Campaign name is required', 'var(--red)'); return; }
+  const resp = await fetch('/api/intel/campaigns', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, actor, techniques: techs, confidence: conf, description: desc || undefined}),
+  });
+  if (resp.ok) { showToast('✓ Campaign added — reloading…', 'var(--green)'); setTimeout(()=>location.reload(), 800); }
+  else { const e = await resp.json(); showToast('✗ ' + (e.detail||'Error'), 'var(--red)'); }
+}
+
+async function addIoc() {
+  const value = document.getElementById('ioc-value').value.trim();
+  const ioc_type = document.getElementById('ioc-type').value;
+  const techs = document.getElementById('ioc-techniques').value.split(',').map(t=>t.trim()).filter(Boolean);
+  const conf = parseFloat(document.getElementById('ioc-confidence').value) || 0.7;
+  if (!value) { showToast('IOC value is required', 'var(--red)'); return; }
+  const resp = await fetch('/api/intel/iocs', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value, ioc_type, related_techniques: techs, confidence: conf}),
+  });
+  if (resp.ok) { showToast('✓ IOC added — reloading…', 'var(--green)'); setTimeout(()=>location.reload(), 800); }
+  else { const e = await resp.json(); showToast('✗ ' + (e.detail||'Error'), 'var(--red)'); }
+}
+
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.color = color; t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
+}
+</script>
+{% endblock %}

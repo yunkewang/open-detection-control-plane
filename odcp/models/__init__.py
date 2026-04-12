@@ -13,6 +13,13 @@ from odcp.models.lifecycle import (
     LifecycleEvent,
     LifecycleSummary,
 )
+from odcp.models.intel import (
+    IocEntry,
+    IocType,
+    ThreatActor,
+    ThreatCampaign,
+    ThreatIntelSummary,
+)
 from odcp.models.ai_soc import (
     AiSocPrototypeSummary,
     AutomationActionItem,
@@ -98,6 +105,11 @@ __all__ = [
     "DetectionState",
     "LifecycleEvent",
     "LifecycleSummary",
+    "IocEntry",
+    "IocType",
+    "ThreatActor",
+    "ThreatCampaign",
+    "ThreatIntelSummary",
     "AgentConfig",
     "AgentHeartbeat",
     "AgentInfo",

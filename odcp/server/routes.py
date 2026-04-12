@@ -265,6 +265,47 @@ async def api_agent_tools(_auth=Depends(reader_or_above())) -> JSONResponse:
     return JSONResponse(get_tool_schemas("anthropic"))
 
 
+@api_router.post("/agent/generate-detection")
+async def api_generate_detection(
+    payload: dict[Any, Any],
+    store: ReportStore = Depends(get_store),
+    _auth=Depends(analyst_or_above()),
+) -> JSONResponse:
+    """Generate an AI detection rule for a MITRE technique.
+
+    Body: ``{"technique_id": "T1059.001", "platform": "sigma",
+             "technique_name": "...", "context": "..."}``
+
+    Requires the 'agent' extra: pip install 'odcp[agent]'
+    """
+    technique_id = payload.get("technique_id", "").strip()
+    if not technique_id:
+        raise HTTPException(status_code=400, detail="'technique_id' required")
+    platform = payload.get("platform", "sigma")
+    technique_name = payload.get("technique_name", "")
+    extra_context = payload.get("context", "")
+    model = payload.get("model", "claude-opus-4-6")
+
+    try:
+        from odcp.agent.rule_generator import RuleGenerator
+        gen = RuleGenerator(model=model)
+        result = gen.generate(
+            technique_id,
+            platform=platform,
+            report=store.report,
+            technique_name=technique_name,
+            additional_context=extra_context,
+        )
+        return JSONResponse(result.model_dump(mode="json"))
+    except SystemExit:
+        raise HTTPException(
+            status_code=503,
+            detail="Anthropic SDK not installed. Run: pip install 'odcp[agent]'",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 # ── SSE endpoint ───────────────────────────────────────────────────────────
 
 
